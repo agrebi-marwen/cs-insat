@@ -72,6 +72,7 @@ vercel
 - `SUPABASE_SERVICE_ROLE_KEY` — **required only for `api/cpSubmit.js`** (judge writes + private test-file reads)
 - `ADMIN_PASSWORD` (used by `api/adminCheck.js`)
 - `PISTON_API_KEY` — optional; appended as the `Authorization` header on Piston calls when set
+- `PISTON_BASE_URL` — optional Piston API base URL; use `http://localhost:2000/api/v2` for local Piston development
 
 Database schema lives in `db/*.sql`; apply new migrations in the Supabase SQL Editor.
 

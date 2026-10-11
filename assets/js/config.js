@@ -5,11 +5,10 @@ window.SUPABASE_CONFIG_READY = false;
 
 async function loadSupabaseConfig() {
   try {
-    // Detect environment
-    const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    const endpoint = isDev 
-      ? 'http://localhost:3000/api/config' 
-      : '/api/config';
+    // Keep configuration on the same origin as the page. This matters when
+    // Vercel dev selects a port other than 3000 because another local service
+    // is already listening there.
+    const endpoint = '/api/config';
 
     const response = await fetch(endpoint);
     if (!response.ok) throw new Error(`Config fetch failed: ${response.status}`);

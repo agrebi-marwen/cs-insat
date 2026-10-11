@@ -11,7 +11,7 @@ A gamified monthly coding-challenge platform built and maintained by the **IEEE 
 | Frontend | Vanilla HTML5, CSS3, JavaScript (no framework) |
 | CP Submission | Attach a source file (`.c`, `.cpp`, `.cc`, `.cxx`, `.py`, `.java`); language auto-detected from the extension, sent to the judge |
 | Backend / Database | Supabase (PostgreSQL + Auth + Row Level Security) |
-| CP Judge | Piston API (public, `emkc.org/api/v2/piston/execute`) with a C++ output comparator running on Piston itself |
+| CP Judge | Piston API (configurable; local Docker Piston or an authorized hosted instance) with a C++ output comparator running on Piston itself |
 | Serverless Functions | Vercel (Node.js ESM) — `api/config`, `api/rateLimit`, `api/authLogin`, `api/authSignup`, `api/adminCheck`, `api/cpSubmit` |
 | Runtime Dependencies | Supabase JS SDK (`supabase-js`), Google Fonts (Press Start 2P, VT323, Space Grotesk) |
 | Deployment | Vercel (`vercel.json`), or local via `python -m http.server` |
@@ -94,7 +94,7 @@ A gamified monthly coding-challenge platform built and maintained by the **IEEE 
 - **Rate limiting** (`api/rateLimit`): 5 auth attempts per 15 minutes per IP+email hash (SHA-256), returns HTTP 429 with retry-after.
 - **Auth hardening**: password-strength policy, session persistence, route guards (pages redirect unauthenticated users to login).
 - **CP judge (server-side only)**: test files live in a private Supabase Storage bucket (`cp-tests`) readable only with `SUPABASE_SERVICE_ROLE_KEY`; the `api/cpSubmit.js` endpoint reads tests and writes results server-side — no hidden tests or API keys ever reach the browser. `cp_problems` rows are readable by `authenticated` users (to show the editor), but storage objects are not.
-- **Piston API key**: optional `PISTON_API_KEY` is sent as the `Authorization` header when set; the emkc.org public endpoint also works without it.
+- **Piston API key**: `PISTON_API_KEY` is sent as the `Authorization` header when set. The emkc.org public endpoint is whitelist-only as of February 15, 2026; local development uses Docker Piston through `PISTON_BASE_URL`.
 
 ---
 

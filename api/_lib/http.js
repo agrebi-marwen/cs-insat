@@ -30,6 +30,18 @@ export function handlePreflight(req, res) {
 }
 
 export function readBody(req) {
+  if (req.body && typeof req.body === 'object') {
+    return Promise.resolve(req.body);
+  }
+
+  if (typeof req.body === 'string') {
+    try {
+      return Promise.resolve(JSON.parse(req.body));
+    } catch {
+      return Promise.resolve({});
+    }
+  }
+
   return new Promise((resolve) => {
     let raw = '';
     req.on('data', chunk => { raw += chunk; });

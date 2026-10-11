@@ -251,18 +251,9 @@ export default async function handler(req, res) {
         memoryLimitMb
       });
     } catch (err) {
-      const runError = err.message;
-      await complete('RE', { runOutput: err.message });
-      res.status(200).json({
-        verdict: 'RE',
-        passed: 0,
-        total: 1,
-        failedTest: 1,
-        executionTimeMs: null,
-        memoryKb: null,
-        compileOutput: null,
-        runOutput: runError
-      });
+      console.error('Piston execution error:', err.message);
+      await complete('RE', { runOutput: `Judge infrastructure error: ${err.message}` });
+      res.status(502).json({ error: `Judge execution service unavailable: ${err.message}` });
       return;
     }
 

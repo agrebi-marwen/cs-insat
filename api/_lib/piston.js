@@ -3,8 +3,11 @@
 // The emkc.org/api/v2 endpoints are public; only PISTON_API_KEY (if set) is
 // sent as the Authorization header when the public instance requires it.
 
-const EXECUTE_URL = 'https://emkc.org/api/v2/piston/execute';
-const RUNTIMES_URL = 'https://emkc.org/api/v2/piston/runtimes';
+const PISTON_BASE_URL = String(
+  process.env.PISTON_BASE_URL || 'https://emkc.org/api/v2/piston'
+).replace(/\/+$/, '');
+const EXECUTE_URL = `${PISTON_BASE_URL}/execute`;
+const RUNTIMES_URL = `${PISTON_BASE_URL}/runtimes`;
 const API_KEY = process.env.PISTON_API_KEY || '';
 
 // Language keys used by the UI / DB. Maps to Piston runtime name + source file.

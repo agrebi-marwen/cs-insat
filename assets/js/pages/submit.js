@@ -21,6 +21,7 @@ const cpFileInput = document.getElementById('cp-file');
 const cpFileNameEl = document.getElementById('cp-file-name');
 const cpSubmitBtn = document.getElementById('cp-submit-btn');
 const cpVerdictEl = document.getElementById('cp-verdict');
+const cpTestResultsEl = document.getElementById('cp-test-results');
 
 const freebieBlock = document.getElementById('freebie-submit-block');
 const freebieForm = document.getElementById('freebie-form');
@@ -30,6 +31,7 @@ const freebieSubmitBtn = document.getElementById('freebie-submit-btn');
 let currentUserId = null;
 let challengeId = null;
 let isCpChallenge = false;
+let cpAllowMultipleSubmissions = false;
 let isFreebieChallenge = false;
 
 const MAX_CODE_LENGTH = 256 * 1024; // 256 KB of source
@@ -53,10 +55,11 @@ async function initSubmitPage() {
 
   currentUserId = session.user.id;
 
-  challengeId = new URLSearchParams(window.location.search).get('id');
+  const params = new URLSearchParams(window.location.search);
+  challengeId = params.get('id') || params.get('challenge_id') || params.get('challenge');
   if (!challengeId) {
     challengeTitle.textContent = "Challenge Not Found";
-    challengeInstructions.textContent = "Please return to the dashboard and select a challenge.";
+    challengeInstructions.innerHTML = 'This page needs a challenge link. <a href="challenges.html">Return to Challenges</a> and select an active challenge.';
     submitBtn.disabled = true;
     cpSubmitBtn && (cpSubmitBtn.disabled = true);
     freebieSubmitBtn && (freebieSubmitBtn.disabled = true);
@@ -104,13 +107,14 @@ async function loadChallengeDetails() {
 async function loadCpConfig() {
   const { data, error } = await supabaseClient
     .from('cp_problems')
-    .select('languages, time_limit_ms, memory_limit_mb')
+    .select('languages, time_limit_ms, memory_limit_mb, allow_multiple_submissions')
     .eq('challenge_id', challengeId)
     .maybeSingle();
 
   if (error || !data) return; // Not a CP challenge — use repo form.
 
   isCpChallenge = true;
+  cpAllowMultipleSubmissions = data.allow_multiple_submissions === true;
   repoBlock.style.display = 'none';
   cpBlock.style.display = 'block';
   submissionForm.style.display = 'none';
@@ -168,11 +172,8 @@ function handleFileSelect() {
   cpFileNameEl.style.color = 'var(--text-mid)';
 }
 
-// Submission eligibility is enforced by the site (the DB no longer enforces a
-// single submission per user + challenge). Policy:
-//   - succeeded before (any APPROVED)                        -> blocked
-//   - a CP judge is currently running (PENDING, no repo URL) -> blocked
-//   - failed (REJECTED) or awaiting confirmation (PENDING)   -> allowed
+// This is only UX feedback; cpSubmit.js and the database RPC enforce the same
+// rules authoritatively.
 async function getSubmissionPolicy() {
   const { data, error } = await supabaseClient
     .from('submissions')
@@ -186,6 +187,12 @@ async function getSubmissionPolicy() {
   }
 
   const subs = Array.isArray(data) ? data : [];
+  if (isCpChallenge && !cpAllowMultipleSubmissions && subs.length > 0) {
+    return {
+      allowed: false,
+      reason: "Only one submission is allowed for this challenge."
+    };
+  }
   if (subs.some(s => s.status === 'APPROVED')) {
     return {
       allowed: false,
@@ -395,6 +402,7 @@ async function handleCpSubmit() {
     }
 
     cpVerdictEl.style.display = 'block';
+    renderTestResults(data.testResults);
 
     if (data.verdict === 'AC') {
       cpVerdictEl.innerHTML = `
@@ -417,6 +425,33 @@ async function handleCpSubmit() {
         <span class="cp-verdict-detail">${escapeHtml(detailText)}</span>`;
       submissionMessage.textContent = "Not accepted. Try again!";
       submissionMessage.style.color = "#fe4e00";
+    }
+
+    function renderTestResults(results) {
+      if (!cpTestResultsEl || !Array.isArray(results) || results.length === 0) return;
+      cpTestResultsEl.innerHTML = `
+        <strong>Test cases</strong>
+        <div class="cp-test-header"><span>Test</span><span>CPU</span><span>Memory</span><span>Result</span></div>
+        ${results.map(test => {
+          const result = String(test.result || 'PENDING').toUpperCase();
+          const resultClass = result === 'OK' || result === 'AC' ? 'cp-v-ac' : `cp-v-${result.toLowerCase()}`;
+          return `
+            <details class="cp-test-result">
+              <summary>
+                <span>Test ${escapeHtml(String(test.index ?? ''))}</span>
+                <span>${escapeHtml(String(test.cpu_ms ?? '—'))} ms</span>
+                <span>${escapeHtml(String(test.memory_kb ?? '—'))} KB</span>
+                <span class="cp-detail-verdict ${escapeHtml(resultClass)}">${escapeHtml(result)}</span>
+              </summary>
+              <div class="cp-test-panels">
+                <div><strong>Input</strong><pre>${escapeHtml(test.input || '')}</pre></div>
+                <div><strong>Expected output</strong><pre>${escapeHtml(test.expected || '')}</pre></div>
+                <div><strong>Your output</strong><pre>${escapeHtml(test.output || '')}</pre></div>
+              </div>
+            </details>`;
+        }).join('')}
+        <small>CPU and memory are measured for the complete program run.</small>`;
+      cpTestResultsEl.style.display = 'block';
     }
 
     if (data.verdict === 'AC' && window.burstParticles) {

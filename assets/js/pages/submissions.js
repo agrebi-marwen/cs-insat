@@ -28,7 +28,13 @@ async function fetchUserSubmissions(userId) {
             ),
             cp_submission_details (
                 language,
-                verdict
+                verdict,
+                code,
+                execution_time_ms,
+                memory_kb,
+                compile_output,
+                run_output,
+                test_results
             )
         `)
     .eq('user_id', userId)
@@ -76,7 +82,15 @@ async function fetchUserSubmissions(userId) {
       if (verdictCode === 'CE')  vClass = 'cp-v-ce';
       detailHtml = `
         <span class="cp-detail-lang">${escapeHtml(langLabel)}</span>
-        <span class="cp-detail-verdict ${escapeHtml(vClass)}">${escapeHtml(verdictCode)}</span>`;
+        <span class="cp-detail-verdict ${escapeHtml(vClass)}">${escapeHtml(verdictCode)}</span>
+        ${cp.execution_time_ms != null ? `<small>${escapeHtml(String(cp.execution_time_ms))} ms${cp.memory_kb != null ? ` · ${escapeHtml(String(cp.memory_kb))} KB` : ''}</small>` : ''}
+        <details class="submission-source">
+          <summary>View source and judge output</summary>
+          <pre>${escapeHtml(cp.code || '')}</pre>
+          ${cp.compile_output ? `<strong>Compiler output</strong><pre>${escapeHtml(cp.compile_output)}</pre>` : ''}
+          ${cp.run_output ? `<strong>Run output</strong><pre>${escapeHtml(cp.run_output)}</pre>` : ''}
+          ${renderTestResults(cp.test_results)}
+        </details>`;
     } else if (sub.notes) {
       detailHtml = `<span class="cp-detail-pending">${escapeHtml(sub.notes)}</span>`;
     } else if (sub.submission_url) {
@@ -101,4 +115,35 @@ async function fetchUserSubmissions(userId) {
         `;
     logsTableBody.appendChild(row);
   });
+}
+
+function renderTestResults(rawResults) {
+  if (!Array.isArray(rawResults) || rawResults.length === 0) return '';
+
+  const rows = rawResults.map(test => {
+    const result = String(test.result || 'PENDING').toUpperCase();
+    const resultClass = result === 'OK' || result === 'AC' ? 'cp-v-ac' : `cp-v-${result.toLowerCase()}`;
+    return `
+      <details class="cp-test-result">
+        <summary>
+          <span>Test ${escapeHtml(String(test.index ?? ''))}</span>
+          <span>${escapeHtml(String(test.cpu_ms ?? '—'))} ms</span>
+          <span>${escapeHtml(String(test.memory_kb ?? '—'))} KB</span>
+          <span class="cp-detail-verdict ${escapeHtml(resultClass)}">${escapeHtml(result)}</span>
+        </summary>
+        <div class="cp-test-panels">
+          <div><strong>Input</strong><pre>${escapeHtml(test.input || '')}</pre></div>
+          <div><strong>Expected output</strong><pre>${escapeHtml(test.expected || '')}</pre></div>
+          <div><strong>Your output</strong><pre>${escapeHtml(test.output || '')}</pre></div>
+        </div>
+      </details>`;
+  }).join('');
+
+  return `
+    <div class="cp-test-results">
+      <strong>Test cases</strong>
+      <div class="cp-test-header"><span>Test</span><span>CPU</span><span>Memory</span><span>Result</span></div>
+      ${rows}
+      <small>CPU and memory are measured for the complete program run.</small>
+    </div>`;
 }

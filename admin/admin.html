@@ -102,6 +102,15 @@
               </div>
             </div>
 
+            <div class="form-group checkbox-group cp-multiple-setting">
+              <label class="switch-label" for="cp-allow-multiple">
+                <input type="checkbox" id="cp-allow-multiple" aria-describedby="cp-allow-multiple-hint">
+                <span class="custom-switch" aria-hidden="true"></span>
+                <span>Allow multiple submissions</span>
+              </label>
+              <p class="hint" id="cp-allow-multiple-hint">When enabled, failed attempts can be retried. Accepted challenges still award points only once.</p>
+            </div>
+
             <div class="form-group">
               <label for="cp-test-file">Test Cases File (JSON)</label>
               <input type="file" id="cp-test-file" accept=".json,application/json">

@@ -237,7 +237,7 @@ function renderNodes(nodes, deepestIndex, completedTags, challengesByTag) {
             <span class="node-required-label">${isUnlocked ? 'Practice with:' : 'Try these to earn the tags:'}</span>
             <div class="node-challenge-links">
               ${nodeChallenges.map(ch =>
-                `<a class="node-challenge-link" href="submit.html?id=${encodeURIComponent(ch.id)}">${escapeHtml(ch.title)} →</a>`
+                `<a class="node-challenge-link" href="${escapeHtml(buildChallengeSubmitUrl(ch.id))}">${escapeHtml(ch.title)} →</a>`
               ).join('')}
             </div>
          </div>`
@@ -274,6 +274,12 @@ function renderNodes(nodes, deepestIndex, completedTags, challengesByTag) {
 
   const done = nodes.filter((_, index) => index <= deepestIndex).length;
   updateProgress(done, nodes.length);
+}
+
+function buildChallengeSubmitUrl(challengeId) {
+  const submitUrl = new URL('submit', window.location.href);
+  submitUrl.searchParams.set('id', challengeId);
+  return submitUrl.href;
 }
 
 function updateProgress(done, total) {

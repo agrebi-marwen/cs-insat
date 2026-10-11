@@ -5,7 +5,7 @@
 // of data follow), compares the full stdout against the full expected output
 // with a Piston-hosted C++ comparator, then persists the verdict.
 //
-//   one submission  ->  one Piston execute call  ->  one comparator run
+//   one attempt     ->  one Piston execute call  ->  one comparator run
 //
 // Request  : POST /api/cpSubmit
 //            Authorization: Bearer <session token>
@@ -25,7 +25,7 @@ import { gunzipSync } from 'zlib';
 const MAX_CODE_LENGTH = 256 * 1024;      // 256 KB of source
 const MAX_TEST_FILE_BYTES = 4 * 1024 * 1024; // 4 MB gz cap
 
-async function rest(path, { method = 'GET', body, token } = {}) {
+async function rest(path, { method = 'GET', body, token, useServiceRole = false } = {}) {
   const headers = {
     apikey: supabaseKey(),
     'Content-Type': 'application/json'
@@ -34,7 +34,9 @@ async function rest(path, { method = 'GET', body, token } = {}) {
   // but the judge needs the created row back to get its id. Ask for the
   // representation so a successful POST actually yields the inserted object.
   if (method === 'POST') headers.Prefer = 'return=representation';
-  headers.Authorization = token ? `Bearer ${token}` : `Bearer ${supabaseKey()}`;
+  headers.Authorization = useServiceRole
+    ? `Bearer ${supabaseKey()}`
+    : (token ? `Bearer ${token}` : `Bearer ${supabaseKey()}`);
   const res = await fetch(`${supabaseUrl()}${path}`, {
     method,
     headers,
@@ -114,6 +116,33 @@ function classifyRun(data) {
   return { kind: 'OK', output: run.stdout || '' };
 }
 
+function splitLines(value) {
+  return String(value ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+}
+
+function buildTestResults(input, expected, actual, testCount, executionTimeMs, memoryKb, verdict) {
+  const inputLines = splitLines(input);
+  const expectedLines = splitLines(expected);
+  const outputLines = splitLines(actual);
+  const cases = [];
+
+  for (let index = 0; index < testCount; index += 1) {
+    const expectedOutput = expectedLines[index] ?? '';
+    const actualOutput = outputLines[index] ?? '';
+    cases.push({
+      index: index + 1,
+      input: inputLines[index + 1] ?? '',
+      expected: expectedOutput,
+      output: actualOutput,
+      cpu_ms: executionTimeMs,
+      memory_kb: memoryKb,
+      result: verdict === 'AC' || actualOutput.trim() === expectedOutput.trim() ? 'OK' : verdict
+    });
+  }
+
+  return cases;
+}
+
 export default async function handler(req, res) {
   applyCommonHeaders(req, res);
   if (handlePreflight(req, res)) return;
@@ -153,25 +182,6 @@ export default async function handler(req, res) {
   }
 
   try {
-    // --- Enforce the site-side submission policy -----------------------------
-    // The DB no longer enforces a single submission per (user, challenge), so
-    // this check is authoritative:
-    //   - already succeeded (APPROVED)                        -> 409
-    //   - a judge is currently running (PENDING, no repo URL) -> 409
-    //   - failed (REJECTED) or awaiting confirmation (PENDING)-> allowed
-    const gateResp = await rest(
-      `/rest/v1/submissions?user_id=eq.${encodeURIComponent(user.id)}&challenge_id=eq.${encodeURIComponent(challengeId)}&select=status,submission_url`
-    );
-    const existing = Array.isArray(gateResp.data) ? gateResp.data : [];
-    if (existing.some(s => s.status === 'APPROVED')) {
-      res.status(409).json({ error: 'You have already succeeded on this challenge.' });
-      return;
-    }
-    if (existing.some(s => s.status === 'PENDING' && !s.submission_url)) {
-      res.status(409).json({ error: 'A submission is already being judged. Wait for the verdict before submitting again.' });
-      return;
-    }
-
     // --- Challenge + judge config -------------------------------------------
     const cpResp = await rest(`/rest/v1/cp_problems?challenge_id=eq.${encodeURIComponent(challengeId)}&select=*`);
     const cp = Array.isArray(cpResp.data) ? cpResp.data[0] : null;
@@ -189,46 +199,46 @@ export default async function handler(req, res) {
     }
 
     const timeLimitMs = cp.time_limit_ms || 1000;
-    const memoryLimitMb = cp.memory_limit_mb || 10;
+    const memoryLimitMb = cp.memory_limit_mb || 256;
     const testFile = await loadTestFile(cp.test_file_path);
 
-    // --- Persist the submission (status flips after judging) -----------------
-    const now = new Date().toISOString();
-    const subResp = await rest('/rest/v1/submissions', {
+    // Atomically enforce the per-challenge policy and create both history rows.
+    // The RPC takes a transaction-scoped advisory lock, so concurrent requests
+    // cannot bypass the one-submission or in-progress restrictions.
+    const createResp = await rest('/rest/v1/rpc/create_cp_submission', {
       method: 'POST',
       body: {
-        user_id: user.id,
-        challenge_id: challengeId,
-        submission_url: null,
-        status: 'PENDING',
-        submitted_at: now
-      }
+        p_user_id: user.id,
+        p_challenge_id: challengeId,
+        p_language: language,
+        p_code: code
+      },
     });
-    if (!subResp.ok || !subResp.data || !subResp.data[0]) {
-      const reason = subResp.text ? ` (${subResp.status}: ${subResp.text.slice(0, 300)})` : ` (${subResp.status})`;
-      res.status(500).json({ error: 'Failed to record submission' + reason });
+    if (!createResp.ok || !createResp.data || !createResp.data[0]) {
+      const message = createResp.data && createResp.data.message
+        ? createResp.data.message
+        : (createResp.text || 'Failed to record submission');
+      const status = /already succeeded|Only one submission|already being judged/i.test(message) ? 409 : 500;
+      res.status(status).json({ error: message });
       return;
     }
-    const submission = subResp.data[0];
+    const submission = { id: createResp.data[0].submission_id };
+    const detailId = createResp.data[0].detail_id;
 
-    const detailResp = await rest('/rest/v1/cp_submission_details', {
+    // Persist the verdict + award points (idempotent) in one SQL call.
+    const complete = (verdict, extra = {}) => rest('/rest/v1/rpc/complete_cp_submission', {
       method: 'POST',
       body: {
-        submission_id: submission.id,
-        user_id: user.id,
-        challenge_id: challengeId,
-        language,
-        code,
-        verdict: 'PENDING',
-        created_at: now
+        p_submission_id: submission.id,
+        p_detail_id: detailId,
+        p_verdict: verdict,
+        p_compile_output: extra.compileOutput ?? null,
+        p_run_output: extra.runOutput ?? null,
+        p_execution_time_ms: extra.executionTimeMs != null ? Math.round(extra.executionTimeMs) : null,
+        p_memory_kb: extra.memoryKb ?? null,
+        p_test_results: extra.testResults ?? []
       }
     });
-    if (!detailResp.ok || !detailResp.data || !detailResp.data[0]) {
-      const reason = detailResp.text ? ` (${detailResp.status}: ${detailResp.text.slice(0, 300)})` : ` (${detailResp.status})`;
-      res.status(500).json({ error: 'Failed to record submission details' + reason });
-      return;
-    }
-    const detailId = detailResp.data[0].id;
 
     // --- Judge: one execution against the whole Codeforces-style input --------
     let data;
@@ -242,14 +252,7 @@ export default async function handler(req, res) {
       });
     } catch (err) {
       const runError = err.message;
-      await rest(`/rest/v1/cp_submission_details?id=eq.${encodeURIComponent(detailId)}`, {
-        method: 'PATCH',
-        body: { verdict: 'RE', run_output: runError, test_results: [] }
-      });
-      await rest(`/rest/v1/submissions?id=eq.${encodeURIComponent(submission.id)}`, {
-        method: 'PATCH',
-        body: { status: 'REJECTED' }
-      });
+      await complete('RE', { runOutput: err.message });
       res.status(200).json({
         verdict: 'RE',
         passed: 0,
@@ -287,31 +290,35 @@ export default async function handler(req, res) {
       const cmp = await compareOutputs([[resT.output, testFile.expected]]);
       verdict = cmp.accepted ? 'AC' : 'WA';
       runOutput = verdict === 'WA' ? resT.output : null;
-      testResults = [{
-        index: 1,
-        result: verdict === 'AC' ? 'OK' : 'WA',
-        time_ms: executionTimeMs,
-        memory_kb: memoryKb
-      }];
+      const testCount = parseInt(String(testFile.input).trim().split(/\r?\n/, 1)[0], 10);
+      testResults = buildTestResults(
+        testFile.input,
+        testFile.expected,
+        resT.output,
+        Number.isFinite(testCount) ? testCount : 1,
+        executionTimeMs,
+        memoryKb,
+        verdict
+      );
     }
 
-    // --- Persist verdicts -----------------------------------------------------
-    await rest(`/rest/v1/cp_submission_details?id=eq.${encodeURIComponent(detailId)}`, {
-      method: 'PATCH',
-      body: {
-        verdict,
-        compile_output: compileOutput,
-        run_output: runOutput,
-        execution_time_ms: executionTimeMs,
-        memory_kb: memoryKb,
-        test_results: testResults
-      }
-    });
+    if (testResults.length === 0) {
+      const testCount = parseInt(String(testFile.input).trim().split(/\r?\n/, 1)[0], 10);
+      testResults = buildTestResults(
+        testFile.input,
+        testFile.expected,
+        '',
+        Number.isFinite(testCount) ? testCount : 1,
+        executionTimeMs,
+        memoryKb,
+        verdict
+      );
+    }
 
-    await rest(`/rest/v1/submissions?id=eq.${encodeURIComponent(submission.id)}`, {
-      method: 'PATCH',
-      body: { status: verdict === 'AC' ? 'APPROVED' : 'REJECTED' }
+    const done = await complete(verdict, {
+      compileOutput, runOutput, executionTimeMs, memoryKb, testResults
     });
+    const award = Array.isArray(done.data) ? done.data[0] : null;
 
     res.status(200).json({
       verdict,
@@ -321,7 +328,8 @@ export default async function handler(req, res) {
       executionTimeMs,
       memoryKb,
       compileOutput,
-      runOutput
+      runOutput,
+      testResults
     });
   } catch (err) {
     console.error('cpSubmit error:', err.message);

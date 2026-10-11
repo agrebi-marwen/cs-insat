@@ -22,7 +22,7 @@ export default function handler(req, res) {
   res.setHeader('Content-Security-Policy', "default-src 'self'");
   
   // PERF: Cache control - config changes rarely, cache for 1 hour
-  res.setHeader('Cache-Control', 'public, max-age=3600, must-revalidate');
+  res.setHeader('Cache-Control', 'no-store');
   
   // Handle preflight
   if (req.method === 'OPTIONS') {
@@ -31,9 +31,13 @@ export default function handler(req, res) {
   
   res.setHeader('Content-Type', 'application/json');
 
+  const configuredUrl = String(process.env.SUPABASE_URL || '')
+    .replace(/\/+$/, '')
+    .replace(/\/rest\/v1$/i, '');
+
   // Return config from environment variables (never exposed to client source)
   res.status(200).json({
-    url: process.env.SUPABASE_URL,
+    url: configuredUrl,
     anonKey: process.env.SUPABASE_ANON_KEY
   });
 }

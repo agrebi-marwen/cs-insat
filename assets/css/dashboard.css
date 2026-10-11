@@ -1711,6 +1711,99 @@
   border: 2px solid;
   text-transform: uppercase;
 }
+.col-details small {
+  display: block;
+  margin-top: 5px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+}
+.submission-source {
+  margin-top: 8px;
+  font-size: 0.8rem;
+}
+.submission-source summary {
+  color: var(--neon-cyan);
+  cursor: pointer;
+}
+.submission-source pre {
+  max-width: 420px;
+  max-height: 180px;
+  overflow: auto;
+  margin: 6px 0;
+  padding: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-mid);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.cp-test-results {
+  margin-top: 12px;
+  color: var(--text-mid);
+  font-family: var(--font-mono);
+}
+.cp-test-header,
+.cp-test-result summary {
+  display: grid;
+  grid-template-columns: minmax(54px, 1fr) minmax(62px, 1fr) minmax(82px, 1fr) minmax(70px, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+.cp-test-header {
+  margin-top: 8px;
+  padding: 8px;
+  color: var(--text-dim);
+  border-bottom: 1px solid rgba(131,181,209,0.2);
+  text-transform: uppercase;
+  font-size: 0.72rem;
+}
+.cp-test-result {
+  border-bottom: 1px solid rgba(131,181,209,0.12);
+}
+.cp-test-result summary {
+  padding: 9px 8px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.78rem;
+}
+.cp-test-result summary::-webkit-details-marker { display: none; }
+.cp-test-result summary::before {
+  content: '▶';
+  color: var(--neon-cyan);
+  margin-right: 4px;
+}
+.cp-test-result[open] summary::before { content: '▼'; }
+.cp-test-panels {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 8px;
+  background: rgba(0,0,0,0.18);
+}
+.cp-test-panels strong {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+.cp-test-panels pre {
+  min-height: 48px;
+  max-height: 150px;
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: rgba(0,0,0,0.28);
+  color: var(--text-mid);
+}
+.cp-test-results > small {
+  display: block;
+  margin-top: 8px;
+  color: var(--text-dim);
+  font-size: 0.7rem;
+}
 .cp-v-ac      { color: #51e898; border-color: #51e898; background: rgba(81,232,152,0.08); }
 .cp-v-wa      { color: #ee8643; border-color: #ee8643; background: rgba(238,134,67,0.08); }
 .cp-v-tle     { color: #eec643; border-color: #eec643; background: rgba(238,198,67,0.08); }

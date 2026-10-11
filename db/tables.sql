@@ -41,6 +41,18 @@ CREATE TABLE public.submissions (
   CONSTRAINT submissions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id),
   CONSTRAINT submissions_challenge_id_fkey FOREIGN KEY (challenge_id) REFERENCES public.challenges(id)
 );
+-- CP-specific policy is stored in cp_problems.allow_multiple_submissions.
+-- Accepted CP attempts are idempotently awarded through challenge_awards.
+CREATE TABLE public.challenge_awards (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  challenge_id uuid NOT NULL,
+  submission_id uuid NOT NULL,
+  points integer NOT NULL,
+  awarded_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT challenge_awards_pkey PRIMARY KEY (id),
+  CONSTRAINT challenge_awards_unique UNIQUE (user_id, challenge_id)
+);
 CREATE TABLE public.roadmaps (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   slug text NOT NULL UNIQUE,

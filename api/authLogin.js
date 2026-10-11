@@ -7,6 +7,7 @@ import { signInWithPassword } from './_lib/supabase.js';
 import { applyCommonHeaders, handlePreflight, readBody } from './_lib/http.js';
 
 export default async function handler(req, res) {
+  try {
   applyCommonHeaders(req, res);
   if (handlePreflight(req, res)) return;
 
@@ -31,8 +32,13 @@ export default async function handler(req, res) {
 
   const { session, error } = await signInWithPassword(email, password);
   if (error) {
+    console.error('authLogin Supabase error:', error);
     return res.status(401).json({ error });
   }
 
   return res.status(200).json({ session });
+  } catch (err) {
+    console.error('authLogin unexpected error:', err);
+    return res.status(500).json({ error: 'Authentication service error: ' + err.message });
+  }
 }

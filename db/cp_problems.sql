@@ -36,10 +36,14 @@ create table if not exists public.cp_problems (
   memory_limit_mb integer not null default 10 check (memory_limit_mb between 1 and 10),
   test_file_path text not null,
   languages text[] not null default array['c++','c','python','java'],
+  allow_multiple_submissions boolean not null default false,
   created_at timestamptz not null default now(),
   constraint cp_problems_challenge_id_fkey foreign key (challenge_id)
     references public.challenges(id) on delete cascade
 );
+
+alter table public.cp_problems
+  add column if not exists allow_multiple_submissions boolean not null default false;
 
 create index if not exists cp_problems_challenge_id_idx on public.cp_problems (challenge_id);
 

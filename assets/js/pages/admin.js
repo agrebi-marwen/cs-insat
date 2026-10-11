@@ -184,6 +184,7 @@ challengeForm.addEventListener('submit', async (e) => {
       timeLimitMs,
       memoryLimitMb,
       languages,
+      allowMultipleSubmissions: document.getElementById('cp-allow-multiple').checked,
       testCount: validation.testCount
     };
   }
@@ -249,6 +250,7 @@ challengeForm.addEventListener('submit', async (e) => {
         time_limit_ms: cpConfig.timeLimitMs,
         memory_limit_mb: cpConfig.memoryLimitMb,
         languages: cpConfig.languages,
+        allow_multiple_submissions: cpConfig.allowMultipleSubmissions,
         test_file_path: testFilePath
       }]);
 
@@ -271,6 +273,7 @@ challengeForm.addEventListener('submit', async (e) => {
   submitBtn.textContent = "Create Challenge";
   challengeForm.reset();
   document.getElementById('is_active').checked = true;
+  document.getElementById('cp-allow-multiple').checked = false;
   syncCpSettingsVisibility();
 });
 

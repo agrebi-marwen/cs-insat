@@ -153,7 +153,9 @@ function renderArchive() {
 
       if (!archived) {
         card.addEventListener('click', () => {
-          window.location.href = `submit.html?id=${challenge.id}`;
+          const submitUrl = new URL('submit', window.location.href);
+          submitUrl.searchParams.set('id', challenge.id);
+          window.location.assign(submitUrl.href);
         });
       }
 

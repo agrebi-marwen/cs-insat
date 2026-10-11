@@ -42,7 +42,8 @@ Users solve monthly coding challenges (submit GitHub/GitLab repos or attach a so
 ├── db/                      *.sql schema + RLS, run in Supabase SQL Editor
 │   ├── tables.sql / challenges.sql / roadmaps.sql / roadmap_nodes.sql
 │   ├── workshops.sql
-│   └── cp_problems.sql      CP judge tables, bucket, policies (NEW)
+│   ├── cp_problems.sql      CP judge tables, bucket, policies (NEW)
+│   └── cp_multiple_submissions.sql  CP retry policy and idempotent scoring
 ├── vercel.json              headers/CSP + function maxDuration
 ├── DESIGN.md                design system spec
 ├── PROJECT_RESUME.md        feature-by-feature documentation
@@ -89,6 +90,9 @@ Database schema lives in `db/*.sql`; apply new migrations in the Supabase SQL Ed
 ---
 
 ## 5. Competitive Programming judge (cheat sheet)
+
+- The admin CP form includes **Allow multiple submissions**. It defaults to disabled; when enabled, failed attempts can be retried, while a submission that is already being judged or has been accepted remains protected.
+- Apply `db/cp_multiple_submissions.sql` after `db/cp_problems.sql`. Its RPCs create attempts under a database lock and finalize verdicts plus the unique `challenge_awards` row in one transaction, so repeated/concurrent accepted requests cannot award points twice.
 
 - Admin sets time limit (100–1000 ms) and memory limit (1–10 MB), allowed languages, and uploads a **single Codeforces-style test archive** `{ "input": "...", "expected": "..." }` — the input text starts with `t` (number of sub-tests) followed by all `t` data sets, and `expected` is the concatenated output. The browser gzips it and POSTs it to `api/cpTestUpload.js`, which re-verifies the admin session server-side and writes it with the service-role key (bypassing `storage.objects` RLS) to the **private** `cp-tests` bucket at `<challenge_id>/tests.json.gz`; the `cp_problems` row is then written (only visible when the challenge's category slug is `competitive-programming`).
 - `api/cpSubmit.js`: auth via Bearer token → reads config + gunzips tests with the service-role key → runs the user's code **once** on Piston with the whole input as stdin → compares the full stdout vs the full expected output in one C++ comparator pass → persists verdict into `cp_submission_details` (AC/WA/TLE/RE/CE) and mirrors AC → `submissions.status='APPROVED'` (roadmap gating counts APPROVED).

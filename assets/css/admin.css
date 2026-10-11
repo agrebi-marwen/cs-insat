@@ -250,6 +250,17 @@ textarea {
   box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.4);
 }
 
+.cp-multiple-setting {
+  margin-top: 16px;
+  padding: 12px;
+  border: 2px solid rgba(131, 181, 209, 0.35);
+  background: rgba(131, 181, 209, 0.06);
+}
+
+.cp-multiple-setting .switch-label {
+  color: var(--text-strong);
+}
+
 .custom-switch::after {
   content: "";
   position: absolute;

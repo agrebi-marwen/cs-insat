@@ -3,12 +3,9 @@
 -- Run this in your Supabase Dashboard - SQL Editor.
 -- Safe to run more than once (IF EXISTS).
 --
--- Moves submission uniqueness OUT of the database and into the application.
--- The app now decides who may submit (see assets/js/pages/submit.js and
--- api/cpSubmit.js): a user is blocked only if they already succeeded on a
--- challenge (APPROVED) or a judge is currently running. They may re-submit
--- after a failure (REJECTED) or while an earlier submission awaits
--- confirmation (PENDING).
+-- Legacy policy migration: removes the old one-row-per-challenge constraint.
+-- CP submission eligibility is now enforced transactionally by
+-- db/cp_multiple_submissions.sql and api/cpSubmit.js.
 -- ============================================================================
 
 -- Remove the database-level "one submission per (user, challenge)" rule.

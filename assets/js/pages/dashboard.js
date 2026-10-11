@@ -333,13 +333,19 @@ function renderMissionProgress(challenges, latestByChallenge) {
                 <span class="mr-meta">${status ? 'Last submitted ' + escapeHtml(formatDate(latestByChallenge[challenge.id].ts)) : 'Awaiting first submission'}</span>
             </div>
             <span class="mini-badge ${badgeClass}">${escapeHtml(statusLabel(status))}</span>
-            <a class="mission-link" href="submit.html?id=${encodeURIComponent(challenge.id)}">Open &rarr;</a>
+            <a class="mission-link" href="${escapeHtml(buildChallengeSubmitUrl(challenge.id))}">Open &rarr;</a>
         `;
     fragment.appendChild(row);
   });
 
   missionProgress.innerHTML = "";
   missionProgress.appendChild(fragment);
+}
+
+function buildChallengeSubmitUrl(challengeId) {
+  const submitUrl = new URL('submit', window.location.href);
+  submitUrl.searchParams.set('id', challengeId);
+  return submitUrl.href;
 }
 
 function statusClass(status) {

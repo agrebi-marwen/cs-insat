@@ -60,6 +60,23 @@ begin
     hashtextextended(p_user_id::text || ':' || p_challenge_id::text, 0)
   );
 
+  -- A CP submission still PENDING after 2 minutes means the judge stopped
+  -- before saving a verdict (crash or timeout). Close it as a judge failure
+  -- so it no longer blocks the user with "already being judged".
+  with stale as (
+    update public.submissions
+       set status = 'REJECTED'
+     where user_id = p_user_id and challenge_id = p_challenge_id
+       and status = 'PENDING' and submission_url is null
+       and submitted_at < now() - interval '2 minutes'
+    returning id
+  )
+  update public.cp_submission_details d
+     set verdict = 'RE',
+         run_output = 'Judging did not finish because of a server problem, not because of your code. Please contact the hosts.'
+    from stale
+   where d.submission_id = stale.id and d.verdict = 'PENDING';
+
   if exists (
     select 1 from public.submissions
      where user_id = p_user_id and challenge_id = p_challenge_id

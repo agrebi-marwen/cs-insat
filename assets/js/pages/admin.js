@@ -179,12 +179,17 @@ challengeForm.addEventListener('submit', async (e) => {
       cpFail("Test file: " + validation.error);
       return;
     }
+    if (document.getElementById('cp-input-mode').value === 'single' && !validation.structured) {
+      cpFail('Test file: "One test per run" needs the { "tests": [...] } format (one entry per test). Convert the file, or choose "All tests at once".');
+      return;
+    }
 
     cpConfig = {
       timeLimitMs,
       memoryLimitMb,
       languages,
       allowMultipleSubmissions: document.getElementById('cp-allow-multiple').checked,
+      inputMode: document.getElementById('cp-input-mode').value === 'multi' ? 'multi' : 'single',
       testCount: validation.testCount
     };
   }
@@ -251,6 +256,7 @@ challengeForm.addEventListener('submit', async (e) => {
         memory_limit_mb: cpConfig.memoryLimitMb,
         languages: cpConfig.languages,
         allow_multiple_submissions: cpConfig.allowMultipleSubmissions,
+        input_mode: cpConfig.inputMode,
         test_file_path: testFilePath
       }]);
 
@@ -321,10 +327,19 @@ function validateTestCases(rawText) {
     return { ok: false, error: "Invalid JSON (" + err.message + ")" };
   }
 
+  // Preferred: { "tests": [ { input, expected }, ... ] } - one entry per
+  // sub-test; the judge prepends t, so multi-line tests keep their boundaries.
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && Array.isArray(parsed.tests)) {
+    if (parsed.tests.length === 0) return { ok: false, error: "\"tests\" must contain at least one test" };
+    const bad = parsed.tests.findIndex(t => !t || typeof t.input !== 'string' || typeof t.expected !== 'string');
+    if (bad !== -1) return { ok: false, error: `test ${bad + 1} must have string fields 'input' and 'expected'` };
+    return { ok: true, testCount: parsed.tests.length, structured: true };
+  }
+
   let pair = parsed;
   if (Array.isArray(parsed)) {
     if (parsed.length === 1) pair = parsed[0];
-    else return { ok: false, error: "must be a single { input, expected } object (Codeforces style)" };
+    else return { ok: false, error: "must be { \"tests\": [...] } or a single { input, expected } object (Codeforces style)" };
   }
 
   if (!pair || typeof pair !== 'object') return { ok: false, error: "must be an object with string fields 'input' and 'expected'" };

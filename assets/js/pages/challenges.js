@@ -24,7 +24,26 @@ async function initChallengesPage() {
   if (!session) return;
 
   await loadUsername(session.user.id, navUsername);
+  await loadSolved(session.user.id);
   await fetchAllChallenges();
+}
+
+// Challenges this user has already solved (an APPROVED submission).
+let solvedIds = new Set();
+async function loadSolved(userId) {
+  const { data } = await supabaseClient
+    .from('submissions')
+    .select('challenge_id')
+    .eq('user_id', userId)
+    .eq('status', 'APPROVED');
+  solvedIds = new Set((data || []).map(s => s.challenge_id));
+}
+
+function cardSummary(text) {
+  const plain = window.statementPlainText
+    ? window.statementPlainText(text)
+    : String(text || '').replace(/\s+/g, ' ').trim();
+  return plain.length > 140 ? plain.slice(0, 140).replace(/\s+\S*$/, '') + '…' : plain;
 }
 
 async function fetchAllChallenges() {
@@ -146,28 +165,31 @@ function renderArchive() {
 
     group.challenges.forEach(challenge => {
       const archived = !challenge.is_active;
-      const card = document.createElement('div');
+      const solved = solvedIds.has(challenge.id);
+      const card = document.createElement(archived ? 'div' : 'a');
       card.classList.add('challenge-card');
       if (archived) card.classList.add('card-archived');
+      if (solved) card.classList.add('card-solved');
       card.dataset.id = challenge.id;
 
       if (!archived) {
-        card.addEventListener('click', () => {
-          const submitUrl = new URL('submit', window.location.href);
-          submitUrl.searchParams.set('id', challenge.id);
-          window.location.assign(submitUrl.href);
-        });
+        // A real link: keyboard focus, middle-click and "open in new tab" work.
+        const submitUrl = new URL('submit', window.location.href);
+        submitUrl.searchParams.set('id', challenge.id);
+        card.href = submitUrl.href;
       }
 
       card.innerHTML = `
                 <div class="card-top">
                     <span class="card-badge">${escapeHtml(challenge.month_year || 'Month')}</span>
-                    <span class="card-points">+${escapeHtml(challenge.points_worth ?? 100)} pts</span>
+                    ${solved
+                      ? `<span class="card-solved-chip">Solved</span>`
+                      : `<span class="card-points">+${escapeHtml(challenge.points_worth ?? 100)} pts</span>`}
                 </div>
                 <h3>${escapeHtml(challenge.title)}</h3>
-                <p class="challenge-desc">${escapeHtml((challenge.instructions || '').replace(/\s+/g, ' ').trim().slice(0, 140))}</p>
+                <p class="challenge-desc">${escapeHtml(cardSummary(challenge.instructions))}</p>
                 ${challenge.tags ? `<div class="card-tags">${challenge.tags.split(/\s+/).filter(t => t).map(t => `<span class="card-tag">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
-                <span class="enter-link">${archived ? 'Archived Month' : 'Submit Solution →'}</span>
+                <span class="enter-link">${archived ? 'Archived Month' : solved ? 'View challenge →' : 'Submit Solution →'}</span>
             `;
       grid.appendChild(card);
     });

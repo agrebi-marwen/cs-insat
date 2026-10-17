@@ -19,8 +19,8 @@ alter table public.submissions
 
 -- ----------------------------------------------------------------------------
 -- 1. CP PROBLEMS - one row per CP challenge.
---    time_limit_ms  <= 5000 (5 second cap)
---    memory_limit_mb <= 10 (MB)  -- small problems; Piston containers are lean
+--    time_limit_ms   100..5000 (5 second cap)
+--    memory_limit_mb 1..256 (MB)
 --    test_file_path = storage path inside the "cp-tests" bucket, e.g.
 --                     "<challenge_id>/tests.json.gz" — a gzip JSON archive with a
 --                     SINGLE Codeforces-style pair { "input", "expected" }:
@@ -33,7 +33,7 @@ create table if not exists public.cp_problems (
   id uuid primary key default gen_random_uuid(),
   challenge_id uuid not null unique,
   time_limit_ms integer not null default 1000 check (time_limit_ms between 100 and 5000),
-  memory_limit_mb integer not null default 10 check (memory_limit_mb between 1 and 10),
+  memory_limit_mb integer not null default 10 check (memory_limit_mb between 1 and 256),
   test_file_path text not null,
   languages text[] not null default array['c++','c','python','java'],
   allow_multiple_submissions boolean not null default false,
@@ -45,6 +45,14 @@ create table if not exists public.cp_problems (
 alter table public.cp_problems
   add column if not exists allow_multiple_submissions boolean not null default false;
 
+-- Input format: 'single' = each test run on its own (no t line, CSAcademy
+-- style); 'multi' = all tests at once, input starts with t.
+alter table public.cp_problems
+  add column if not exists input_mode text not null default 'single';
+alter table public.cp_problems drop constraint if exists cp_problems_input_mode_check;
+alter table public.cp_problems add constraint cp_problems_input_mode_check
+  check (input_mode in ('single', 'multi'));
+
 create index if not exists cp_problems_challenge_id_idx on public.cp_problems (challenge_id);
 
 -- ----------------------------------------------------------------------------
@@ -55,7 +63,7 @@ create index if not exists cp_problems_challenge_id_idx on public.cp_problems (c
 -- ----------------------------------------------------------------------------
 alter table public.cp_problems drop constraint if exists cp_problems_memory_limit_mb_check;
 alter table public.cp_problems add constraint cp_problems_memory_limit_mb_check
-  check (memory_limit_mb between 1 and 10);
+  check (memory_limit_mb between 1 and 256);
 
 alter table public.cp_problems drop constraint if exists cp_problems_time_limit_ms_check;
 alter table public.cp_problems add constraint cp_problems_time_limit_ms_check
@@ -63,7 +71,7 @@ alter table public.cp_problems add constraint cp_problems_time_limit_ms_check
 
 -- ----------------------------------------------------------------------------
 -- 2. CP SUBMISSION DETAILS - source code + judge verdict per submission.
---    verdict: PENDING (judging) | AC | WA | TLE | RE | CE
+--    verdict: PENDING (judging) | AC | WA | TLE | MLE | RE | CE
 -- ----------------------------------------------------------------------------
 create table if not exists public.cp_submission_details (
   id uuid primary key default gen_random_uuid(),
@@ -73,7 +81,7 @@ create table if not exists public.cp_submission_details (
   language text not null,
   code text not null,
   verdict text not null default 'PENDING'
-    check (verdict in ('PENDING','AC','WA','TLE','RE','CE')),
+    check (verdict in ('PENDING','AC','WA','TLE','MLE','RE','CE')),
   compile_output text,
   run_output text,
   execution_time_ms integer,
@@ -87,6 +95,11 @@ create table if not exists public.cp_submission_details (
   constraint cp_details_challenge_id_fkey foreign key (challenge_id)
     references public.challenges(id) on delete cascade
 );
+
+-- Constraint sync for existing tables (adds the MLE verdict).
+alter table public.cp_submission_details drop constraint if exists cp_submission_details_verdict_check;
+alter table public.cp_submission_details add constraint cp_submission_details_verdict_check
+  check (verdict in ('PENDING','AC','WA','TLE','MLE','RE','CE'));
 
 create index if not exists cp_details_submission_id_idx on public.cp_submission_details (submission_id);
 create index if not exists cp_details_user_id_idx on public.cp_submission_details (user_id);

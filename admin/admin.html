@@ -83,13 +83,22 @@
               <div class="form-group">
                 <label for="cp-time-limit">Time Limit (ms)</label>
                 <input type="number" id="cp-time-limit" min="100" max="5000" step="50" value="1000" required>
-                <p class="hint">Max 5000 ms (5 seconds).</p>
+                <p class="hint">100 to 5000 ms. Java automatically gets +2000 ms for JVM startup.</p>
               </div>
               <div class="form-group">
                 <label for="cp-memory-limit">Memory Limit (MB)</label>
-                <input type="number" id="cp-memory-limit" min="1" max="10" step="1" value="10" required>
-                <p class="hint">Max 10 MB.</p>
+                <input type="number" id="cp-memory-limit" min="1" max="256" step="1" value="256" required>
+                <p class="hint">1 to 256 MB. Java always gets at least 256 MB, Python at least 64 MB.</p>
               </div>
+            </div>
+
+            <div class="form-group">
+              <label for="cp-input-mode">Input Format</label>
+              <select id="cp-input-mode">
+                <option value="single" selected>One test per run (recommended, beginner friendly)</option>
+                <option value="multi">Input starts with t test cases (Codeforces style)</option>
+              </select>
+              <p class="hint"><strong>Recommended:</strong> each test is given to the program on its own, exactly like the examples in the statement, so beginners just read the input and print the answer. Choose <code>t</code> test cases only if the statement says the input starts with <code>t</code>. The test file is the same in both cases.</p>
             </div>
 
             <div class="form-group">
@@ -115,16 +124,21 @@
               <label for="cp-test-file">Test Cases File (JSON)</label>
               <input type="file" id="cp-test-file" accept=".json,application/json">
               <p class="hint">
-                Attach <code>test_cases.json</code> containing ONE object with an <code>input</code>
-                and an <code>expected</code> string, <strong>Codeforces style</strong>: the input text
-                starts with <code>t</code> (the number of sub-tests) followed by all <code>t</code>
-                data sets; <code>expected</code> holds the concatenated output. Your judge runs the
-                user's code <strong>once</strong> against the whole input. Example:
+                Attach <code>test_cases.json</code> with a <code>tests</code> list: one
+                <code>{ input, expected }</code> entry per sub-test (an input can span several lines,
+                e.g. a matrix). The judge builds the Codeforces-style input itself: <code>t</code>
+                (the number of tests) on the first line, then every test's input, and runs the
+                user's code <strong>once</strong> against it. Example:
               </p>
               <pre class="cp-test-example">{
-  "input": "2\n1 2 3 4 5\n10 20 30\n",
-  "expected": "15\n60\n"
+  "tests": [
+    { "input": "0 0 0\n0 1 0\n0 0 0", "expected": "0" },
+    { "input": "1 0 0\n0 0 0\n0 0 0", "expected": "2" }
+  ]
 }</pre>
+              <p class="hint">Add <code>"sample": true</code> to the tests that appear as examples in the statement: participants can run their code on those with <strong>Run on samples</strong> (nothing is recorded). Sample tests are still part of the graded run.</p>
+              <p class="hint">The older single <code>{ "input": "t\n...", "expected": "..." }</code> object is still accepted (no samples).</p>
+              <p class="hint">Decimal answers (e.g. <code>0.333333</code>) are accepted within an absolute or relative error of 10<sup>-6</sup>; say so in the statement. Integers and words must match exactly.</p>
             </div>
           </div>
 

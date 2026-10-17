@@ -78,6 +78,7 @@ async function fetchUserSubmissions(userId) {
       if (verdictCode === 'AC')  vClass = 'cp-v-ac';
       if (verdictCode === 'WA')  vClass = 'cp-v-wa';
       if (verdictCode === 'TLE') vClass = 'cp-v-tle';
+      if (verdictCode === 'MLE') vClass = 'cp-v-mle';
       if (verdictCode === 'RE')  vClass = 'cp-v-re';
       if (verdictCode === 'CE')  vClass = 'cp-v-ce';
       detailHtml = `

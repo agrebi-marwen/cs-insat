@@ -20,6 +20,8 @@ const cpLimitsEl = document.getElementById('cp-limits');
 const cpFileInput = document.getElementById('cp-file');
 const cpFileNameEl = document.getElementById('cp-file-name');
 const cpSubmitBtn = document.getElementById('cp-submit-btn');
+const cpRunBtn = document.getElementById('cp-run-btn');
+const cpDropEl = document.getElementById('cp-drop');
 const cpVerdictEl = document.getElementById('cp-verdict');
 const cpTestResultsEl = document.getElementById('cp-test-results');
 
@@ -35,6 +37,63 @@ let cpAllowMultipleSubmissions = false;
 let isFreebieChallenge = false;
 
 const MAX_CODE_LENGTH = 256 * 1024; // 256 KB of source
+
+// Extra time / minimum memory the judge gives each language on top of the
+// problem's limits (keep in sync with LANG_CONFIG in api/_lib/piston.js).
+const LANG_ALLOWANCE = {
+  java:   { extraTimeMs: 2000, minMemoryMb: 256 },
+  python: { minMemoryMb: 64 }
+};
+let cpTimeLimitMs = 1000;
+let cpMemoryLimitMb = 256;
+let cpInputMode = 'multi';
+
+// Show the limits that apply to the selected language as two HUD cells.
+function updateCpLimits() {
+  const allowance = LANG_ALLOWANCE[cpLangSlct.value] || {};
+  const tl = cpTimeLimitMs + (allowance.extraTimeMs || 0);
+  const ml = Math.max(cpMemoryLimitMb, allowance.minMemoryMb || 0);
+  const langName = cpLangSlct.options[cpLangSlct.selectedIndex]?.textContent || '';
+  const cell = (label, value, unit, base) => `
+    <div class="cp-limit">
+      <span class="cp-limit-label">${label}</span>
+      <span class="cp-limit-value">${value}<small>${unit}</small></span>
+      ${base != null ? `<span class="cp-limit-note">problem: ${base} ${unit}</span>` : ''}
+    </div>`;
+  // One test per run: limits apply to each test, and Java's JVM start-up is
+  // paid once, so it gets no extra time per test.
+  const perTest = cpInputMode === 'single';
+  const shownTl = perTest ? cpTimeLimitMs : tl;
+  cpLimitsEl.innerHTML =
+    cell('Time', shownTl, 'ms', shownTl !== cpTimeLimitMs ? cpTimeLimitMs : null) +
+    cell('Memory', ml, 'MB', ml !== cpMemoryLimitMb ? cpMemoryLimitMb : null) +
+    `<p class="cp-format">${perTest
+      ? 'Read the input exactly as shown in the examples and print the answer. Your program is run once for every test.'
+      : '<strong>The input starts with the number of test cases <code>t</code>.</strong> Read <code>t</code> first, then answer each test case on its own line, as in the examples.'}</p>`;
+  cpLimitsEl.setAttribute('aria-label', `Limits for ${langName}: ${tl} milliseconds, ${ml} megabytes`);
+}
+
+function setFileStatus(text, isError) {
+  cpFileNameEl.textContent = text;
+  cpDropEl.classList.toggle('is-error', !!isError);
+  cpDropEl.classList.toggle('has-file', !isError && text !== 'Choose a source file');
+}
+
+// Let users drop a source file onto the picker.
+function bindDropZone() {
+  ['dragenter', 'dragover'].forEach(type => cpDropEl.addEventListener(type, e => {
+    e.preventDefault();
+    cpDropEl.classList.add('is-dragging');
+  }));
+  ['dragleave', 'drop'].forEach(type => cpDropEl.addEventListener(type, () => cpDropEl.classList.remove('is-dragging')));
+  cpDropEl.addEventListener('drop', e => {
+    e.preventDefault();
+    const files = e.dataTransfer && e.dataTransfer.files;
+    if (!files || !files.length) return;
+    cpFileInput.files = files;
+    handleFileSelect();
+  });
+}
 
 const FILE_LANG = {
   '.c': 'c',
@@ -54,6 +113,7 @@ async function initSubmitPage() {
   if (!session) return;
 
   currentUserId = session.user.id;
+  loadUsername(currentUserId, document.getElementById('nav-username'));
 
   const params = new URLSearchParams(window.location.search);
   challengeId = params.get('id') || params.get('challenge_id') || params.get('challenge');
@@ -62,6 +122,7 @@ async function initSubmitPage() {
     challengeInstructions.innerHTML = 'This page needs a challenge link. <a href="challenges.html">Return to Challenges</a> and select an active challenge.';
     submitBtn.disabled = true;
     cpSubmitBtn && (cpSubmitBtn.disabled = true);
+    cpRunBtn && (cpRunBtn.disabled = true);
     freebieSubmitBtn && (freebieSubmitBtn.disabled = true);
     return;
   }
@@ -85,6 +146,7 @@ async function loadChallengeDetails() {
     console.error("Fetch challenge error:", error);
     submitBtn.disabled = true;
     cpSubmitBtn && (cpSubmitBtn.disabled = true);
+    cpRunBtn && (cpRunBtn.disabled = true);
     freebieSubmitBtn && (freebieSubmitBtn.disabled = true);
     return;
   }
@@ -95,7 +157,12 @@ async function loadChallengeDetails() {
   challengeTitle.textContent = challenge.title;
   challengeMonth.textContent = challenge.month_year || "Active Challenge";
   challengePoints.textContent = `Reward: ${challenge.points_worth} pts`;
-  challengeInstructions.textContent = challenge.instructions;
+  document.title = `${challenge.title} · The Time Portal`;
+  if (window.renderStatement) {
+    window.renderStatement(challengeInstructions, challenge.instructions);
+  } else {
+    challengeInstructions.textContent = challenge.instructions;
+  }
 
   const detailsCard = document.querySelector('.challenge-details-card');
   if (detailsCard && window.applyEpochColor && window.epochHue) {
@@ -107,7 +174,7 @@ async function loadChallengeDetails() {
 async function loadCpConfig() {
   const { data, error } = await supabaseClient
     .from('cp_problems')
-    .select('languages, time_limit_ms, memory_limit_mb, allow_multiple_submissions')
+    .select('*')
     .eq('challenge_id', challengeId)
     .maybeSingle();
 
@@ -131,12 +198,16 @@ async function loadCpConfig() {
     cpLangSlct.appendChild(opt);
   });
 
-  const tl = data.time_limit_ms || 1000;
-  const ml = data.memory_limit_mb || 256;
-  cpLimitsEl.textContent = `Time: ${tl} ms  ·  Memory: ${ml} MB  ·  ${allowed.length} language${allowed.length > 1 ? 's' : ''}`;
+  cpTimeLimitMs = data.time_limit_ms || 1000;
+  cpMemoryLimitMb = data.memory_limit_mb || 256;
+  cpInputMode = data.input_mode === 'single' ? 'single' : 'multi';
+  updateCpLimits();
 
+  cpLangSlct.addEventListener('change', updateCpLimits);
   cpFileInput.addEventListener('change', handleFileSelect);
+  bindDropZone();
   cpSubmitBtn.addEventListener('click', handleCpSubmit);
+  cpRunBtn.addEventListener('click', handleCpRun);
 }
 
 // Pick which submission UI is shown: freebie > CP > repo.
@@ -156,8 +227,7 @@ function handleFileSelect() {
   if (!file) return;
 
   if (file.size > MAX_CODE_LENGTH) {
-    cpFileNameEl.textContent = 'File too large (max 256 KB).';
-    cpFileNameEl.style.color = '#fe4e00';
+    setFileStatus(`${file.name} is too large (max 256 KB). Choose a smaller file.`, true);
     return;
   }
 
@@ -165,11 +235,14 @@ function handleFileSelect() {
   const inferred = FILE_LANG[ext.toLowerCase()];
   if (inferred) {
     const allowedVals = Array.from(cpLangSlct.options).map(o => o.value);
-    if (allowedVals.includes(inferred)) cpLangSlct.value = inferred;
+    if (allowedVals.includes(inferred)) {
+      cpLangSlct.value = inferred;
+      updateCpLimits();
+    }
   }
 
-  cpFileNameEl.textContent = `${file.name} (${file.size} bytes)`;
-  cpFileNameEl.style.color = 'var(--text-mid)';
+  const size = file.size < 1024 ? `${file.size} B` : `${(file.size / 1024).toFixed(1)} KB`;
+  setFileStatus(`${file.name} · ${size}`, false);
 }
 
 // This is only UX feedback; cpSubmit.js and the database RPC enforce the same
@@ -177,7 +250,7 @@ function handleFileSelect() {
 async function getSubmissionPolicy() {
   const { data, error } = await supabaseClient
     .from('submissions')
-    .select('status, submission_url')
+    .select('status, submission_url, submitted_at')
     .eq('user_id', currentUserId)
     .eq('challenge_id', challengeId);
 
@@ -199,7 +272,11 @@ async function getSubmissionPolicy() {
       reason: "You've already succeeded on this challenge, so you can't submit again."
     };
   }
-  if (subs.some(s => s.status === 'PENDING' && !s.submission_url)) {
+  // A CP submission pending for over 2 minutes is stale (the judge stopped);
+  // the server closes it on the next attempt, so it must not block here.
+  const STALE_MS = 2 * 60 * 1000;
+  if (subs.some(s => s.status === 'PENDING' && !s.submission_url &&
+      Date.now() - new Date(s.submitted_at).getTime() < STALE_MS)) {
     return {
       allowed: false,
       reason: "A submission is currently being judged. Wait for the verdict before submitting again."
@@ -221,6 +298,7 @@ async function applySubmissionAvailability() {
     cpSubmitBtn.disabled = true;
     freebieSubmitBtn.disabled = true;
     showSubmissionMessage(policy.reason, "#fe4e00");
+    // Running on samples records nothing, so it stays available.
   }
 }
 
@@ -350,6 +428,136 @@ freebieForm.addEventListener('submit', async (e) => {
   }, 3000);
 });
 
+// Verdict explanations shown under the badge.
+const VERDICT_TEXT = {
+  WA: 'Wrong answer: output does not match the expected output.',
+  TLE: 'Time limit exceeded.',
+  MLE: 'Memory limit exceeded.',
+  CE: 'Compilation error.',
+  RE: 'Runtime error during execution.'
+};
+
+function renderTestResults(results) {
+  if (!cpTestResultsEl) return;
+  if (!Array.isArray(results) || results.length === 0) {
+    cpTestResultsEl.style.display = 'none';
+    return;
+  }
+  const norm = r => String(r || 'PENDING').toUpperCase();
+  const isOk = r => r === 'OK' || r === 'AC';
+  const passed = results.filter(t => isOk(norm(t.result))).length;
+
+  // Segmented strip: one cell per test, in order.
+  const strip = results.map(t => {
+    const r = norm(t.result);
+    return `<span class="cp-seg ${isOk(r) ? 'cp-seg-ok' : `cp-seg-${escapeHtml(r.toLowerCase())}`}" title="Test ${escapeHtml(String(t.index))}: ${escapeHtml(isOk(r) ? 'passed' : r)}"></span>`;
+  }).join('');
+
+  cpTestResultsEl.innerHTML = `
+    <div class="cp-results-head">
+      <strong>Tests</strong>
+      <span class="cp-results-count"><b>${passed}</b> / ${results.length} passed</span>
+    </div>
+    <div class="cp-strip" role="img" aria-label="${passed} of ${results.length} tests passed">${strip}</div>
+    <div class="cp-test-list">
+    ${results.map(test => {
+      const result = norm(test.result);
+      const resultClass = isOk(result) ? 'cp-v-ac' : `cp-v-${result.toLowerCase()}`;
+      return `
+        <details class="cp-test-result">
+          <summary>
+            <span class="cp-test-name">Test ${escapeHtml(String(test.index ?? ''))}</span>
+            <span class="cp-detail-verdict ${escapeHtml(resultClass)}">${escapeHtml(isOk(result) ? 'OK' : result)}</span>
+          </summary>
+          <div class="cp-test-panels">
+            <div><span class="cp-panel-label">Input</span><pre>${escapeHtml(test.input || '')}</pre></div>
+            <div><span class="cp-panel-label">Expected</span><pre>${escapeHtml(test.expected || '')}</pre></div>
+            <div><span class="cp-panel-label">Your output</span><pre>${escapeHtml(test.output || '')}</pre></div>
+          </div>
+        </details>`;
+    }).join('')}
+    </div>
+    <small class="cp-results-note">Time and memory are measured for the whole run: ${escapeHtml(String(results[0].cpu_ms ?? '—'))} ms, ${escapeHtml(String(results[0].memory_kb ?? '—'))} KB.</small>`;
+  cpTestResultsEl.style.display = 'block';
+}
+
+function renderVerdict(data, isSampleRun) {
+  const verdict = String(data.verdict || '');
+  const detail = verdict === 'AC'
+    ? `${isSampleRun ? 'All sample tests passed' : 'All tests passed'} in ${data.executionTimeMs || 0} ms.`
+    : (VERDICT_TEXT[verdict] || `Verdict: ${verdict}`);
+  const extra = verdict === 'CE' && data.compileOutput
+    ? `<pre class="cp-compile-output">${escapeHtml(String(data.compileOutput).slice(0, 2000))}</pre>`
+    : '';
+  cpVerdictEl.className = `cp-verdict cp-verdict-${escapeHtml(verdict.toLowerCase())}`;
+  cpVerdictEl.innerHTML = `
+    <div class="cp-verdict-main">
+      <span class="cp-verdict-badge verdict-${escapeHtml(verdict.toLowerCase())}">${escapeHtml(verdict)}</span>
+      <div class="cp-verdict-text">
+        <span class="cp-verdict-kind">${isSampleRun ? 'Sample run · not submitted' : 'Graded submission'}</span>
+        <span class="cp-verdict-detail">${escapeHtml(detail)}</span>
+      </div>
+    </div>${extra}`;
+  cpVerdictEl.style.display = 'block';
+}
+
+// Shared request flow for "Run on samples" (cpRun) and "Run & Submit" (cpSubmit).
+async function callJudge(endpoint, button, busyLabel, idleLabel) {
+  const code = await readSelectedFile();
+  if (!code.trim()) {
+    showSubmissionMessage("Attach a source file with your solution first.", "#fe4e00");
+    return null;
+  }
+
+  button.disabled = true;
+  button.textContent = busyLabel;
+  cpVerdictEl.style.display = 'none';
+
+  const session = await supabaseClient.auth.getSession();
+  const token = session && session.data && session.data.session && session.data.session.access_token;
+
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + (token || '')
+      },
+      body: JSON.stringify({ challengeId, code, language: cpLangSlct.value })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showSubmissionMessage(data.error || "Judge request failed.", "#fe4e00");
+      return null;
+    }
+    return data;
+  } catch (err) {
+    showSubmissionMessage("Judge request failed: " + err.message, "#fe4e00");
+    return null;
+  } finally {
+    button.disabled = false;
+    button.textContent = idleLabel;
+  }
+}
+
+// Run against the sample tests only: nothing is recorded, no attempt used.
+async function handleCpRun() {
+  if (!currentUserId || !challengeId) return;
+  showSubmissionMessage("Running your code on the sample tests (not submitted)...", "var(--text-strong)");
+
+  const data = await callJudge('../api/cpRun', cpRunBtn, "Running...", "Run on samples");
+  if (!data) return;
+
+  renderVerdict(data, true);
+  renderTestResults(data.testResults);
+  showSubmissionMessage(
+    data.verdict === 'AC'
+      ? "Sample tests passed. This was not a submission: use Run & Submit to be graded."
+      : "Sample run finished. This was not a submission and did not use an attempt.",
+    data.verdict === 'AC' ? "#83b5d1" : "var(--text-mid)"
+  );
+}
+
 // Handle CP submission (attached source file → judge endpoint)
 async function handleCpSubmit() {
   if (!currentUserId || !challengeId) return;
@@ -361,109 +569,21 @@ async function handleCpSubmit() {
     return;
   }
 
-  cpSubmitBtn.disabled = true;
-  cpSubmitBtn.textContent = "Judging...";
-  cpVerdictEl.style.display = 'none';
-  submissionMessage.textContent = "Running your code against test cases...";
-  submissionMessage.style.color = "var(--text-strong)";
+  showSubmissionMessage("Running your code against test cases...", "var(--text-strong)");
+  const data = await callJudge('../api/cpSubmit', cpSubmitBtn, "Judging...", "Run & Submit");
+  if (!data) return;
 
-  const code = await readSelectedFile();
-  const language = cpLangSlct.value;
+  renderVerdict(data, false);
+  renderTestResults(data.testResults);
 
-  if (!code.trim()) {
-    submissionMessage.textContent = "Attach a source file with your solution first.";
-    submissionMessage.style.color = "#fe4e00";
-    cpSubmitBtn.disabled = false;
-    cpSubmitBtn.textContent = "Run & Submit";
-    return;
-  }
-
-  const session = await supabaseClient.auth.getSession();
-  const token = session && session.data && session.data.session && session.data.session.access_token;
-
-  try {
-    const res = await fetch('../api/cpSubmit', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + (token || '')
-      },
-      body: JSON.stringify({ challengeId, code, language })
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      submissionMessage.textContent = data.error || "Judge request failed.";
-      submissionMessage.style.color = "#fe4e00";
-      cpSubmitBtn.disabled = false;
-      cpSubmitBtn.textContent = "Run & Submit";
-      return;
-    }
-
-    cpVerdictEl.style.display = 'block';
-    renderTestResults(data.testResults);
-
-    if (data.verdict === 'AC') {
-      cpVerdictEl.innerHTML = `
-        <span class="cp-verdict-badge verdict-ac">AC</span>
-        <span class="cp-verdict-detail">All sub-tests passed (${data.executionTimeMs || 0} ms).</span>`;
-      submissionMessage.textContent = "Accepted! Submission queued for approval.";
-      submissionMessage.style.color = "#83b5d1";
-    } else {
-      const detailText = data.verdict === 'WA'
-        ? `Wrong answer — output does not match the expected output.`
-        : data.verdict === 'TLE'
-        ? `Time limit exceeded.`
-        : data.verdict === 'CE'
-        ? `Compilation error.`
-        : data.verdict === 'RE'
-        ? `Runtime error during execution.`
-        : `Verdict: ${data.verdict}`;
-      cpVerdictEl.innerHTML = `
-        <span class="cp-verdict-badge verdict-${data.verdict.toLowerCase()}">${data.verdict}</span>
-        <span class="cp-verdict-detail">${escapeHtml(detailText)}</span>`;
-      submissionMessage.textContent = "Not accepted. Try again!";
-      submissionMessage.style.color = "#fe4e00";
-    }
-
-    function renderTestResults(results) {
-      if (!cpTestResultsEl || !Array.isArray(results) || results.length === 0) return;
-      cpTestResultsEl.innerHTML = `
-        <strong>Test cases</strong>
-        <div class="cp-test-header"><span>Test</span><span>CPU</span><span>Memory</span><span>Result</span></div>
-        ${results.map(test => {
-          const result = String(test.result || 'PENDING').toUpperCase();
-          const resultClass = result === 'OK' || result === 'AC' ? 'cp-v-ac' : `cp-v-${result.toLowerCase()}`;
-          return `
-            <details class="cp-test-result">
-              <summary>
-                <span>Test ${escapeHtml(String(test.index ?? ''))}</span>
-                <span>${escapeHtml(String(test.cpu_ms ?? '—'))} ms</span>
-                <span>${escapeHtml(String(test.memory_kb ?? '—'))} KB</span>
-                <span class="cp-detail-verdict ${escapeHtml(resultClass)}">${escapeHtml(result)}</span>
-              </summary>
-              <div class="cp-test-panels">
-                <div><strong>Input</strong><pre>${escapeHtml(test.input || '')}</pre></div>
-                <div><strong>Expected output</strong><pre>${escapeHtml(test.expected || '')}</pre></div>
-                <div><strong>Your output</strong><pre>${escapeHtml(test.output || '')}</pre></div>
-              </div>
-            </details>`;
-        }).join('')}
-        <small>CPU and memory are measured for the complete program run.</small>`;
-      cpTestResultsEl.style.display = 'block';
-    }
-
-    if (data.verdict === 'AC' && window.burstParticles) {
+  if (data.verdict === 'AC') {
+    showSubmissionMessage("Accepted! Submission queued for approval.", "#83b5d1");
+    if (window.burstParticles) {
       const rect = cpSubmitBtn.getBoundingClientRect();
       const hue = window.epochHue ? window.epochHue(challengeMonth.textContent) : undefined;
       window.burstParticles(rect.left + rect.width / 2, rect.top + rect.height / 2, hue);
     }
-  } catch (err) {
-    submissionMessage.textContent = "Judge request failed: " + err.message;
-    submissionMessage.style.color = "#fe4e00";
+  } else {
+    showSubmissionMessage("Not accepted. Try again!", "#fe4e00");
   }
-
-  cpSubmitBtn.disabled = false;
-  cpSubmitBtn.textContent = "Run & Submit";
 }

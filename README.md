@@ -132,7 +132,29 @@ If you pull the variables again later, restart `vercel dev` afterwards.
 
 ## Competitive Programming judge
 
+<<<<<<< HEAD
 - Admins set the time limit (100–1000 ms), memory limit (1–10 MB) and allowed languages, and upload one Codeforces-style test archive `{ "input": "...", "expected": "..." }`. The browser gzips it and `api/cpTestUpload.js` stores it in the private `cp-tests` bucket at `<challenge_id>/tests.json.gz`.
 - `api/cpSubmit.js` authenticates the user, loads the tests with the service-role key, runs the code **once** on Piston with the whole input as stdin, compares stdout with a C++ comparator, and saves the verdict (AC/WA/TLE/RE/CE) to `cp_submission_details`. AC also marks the submission `APPROVED`.
 - **Allow multiple submissions** (admin option, off by default) lets users retry failed attempts. The RPCs in `cp_multiple_submissions.sql` lock and finalize atomically, so points can't be awarded twice.
 - All verdicts are written server-side only.
+=======
+- **No build step.** Pages are plain HTML that load `theme.js` early, then `config.js` → `common.js` → `security.js`/`api-cache.js`/effect scripts → `pages/<page>.js` (all `defer`). Page scripts bootstrap with `initApp(initPageFn)`; every page calls `requireSession()` to enforce the auth wall.
+- **API functions are ESM.** `api/**` uses `import`/`export default`. `node --check` on a `.js` file needs an ESM parse — copy it to `.mjs` in temp first, e.g. `Copy-Item x.js $env:TEMP\opencode\x.mjs` then `node --check`. Files in `api/_lib/` are never deployed as routes (Vercel ignores `_` dirs).
+- **Content Security Policy (`vercel.json`) limits:** `script-src 'self' https://cdn.jsdelivr.net` — **no inline scripts**; any new JS dependency must be an ESM URL on `cdn.jsdelivr.net`. `connect-src 'self' https://*.supabase.co` — browser code may only reach Supabase, so the judge must run on the server (`api/`) to touch Piston.
+- **Paths from `dashboard/*.html` to API:** `../api/<fn>`. Signals: `pages/admin.js`, `pages/login.js` use `fetch('../api/...')`.
+- **XSS:** always `escapeHtml()` dynamic strings; untrusted URLs go through `safeUrl()`.
+- **New DB feature = new `db/<name>.sql`** with `IF NOT EXISTS`-safe statements + RLS policies, matching `cp_problems.sql` / `workshops.sql` style. Re-run is safe.
+- **Design constraints:** exactly 5 palette colors, hard shadows, no flashing/blinking/glitch, respect `prefers-reduced-motion`. See `DESIGN.md`.
+
+---
+
+## 5. Competitive Programming judge (cheat sheet)
+
+- The admin CP form includes **Allow multiple submissions**. It defaults to disabled; when enabled, failed attempts can be retried, while a submission that is already being judged or has been accepted remains protected.
+- Apply `db/cp_multiple_submissions.sql` after `db/cp_problems.sql`. Its RPCs create attempts under a database lock and finalize verdicts plus the unique `challenge_awards` row in one transaction, so repeated/concurrent accepted requests cannot award points twice.
+
+- Admin sets time limit (100–5000 ms) and memory limit (1–10 MB), allowed languages, and uploads a **single Codeforces-style test archive** `{ "input": "...", "expected": "..." }` — the input text starts with `t` (number of sub-tests) followed by all `t` data sets, and `expected` is the concatenated output. The browser gzips it and POSTs it to `api/cpTestUpload.js`, which re-verifies the admin session server-side and writes it with the service-role key (bypassing `storage.objects` RLS) to the **private** `cp-tests` bucket at `<challenge_id>/tests.json.gz`; the `cp_problems` row is then written (only visible when the challenge's category slug is `competitive-programming`).
+- `api/cpSubmit.js`: auth via Bearer token → reads config + gunzips tests with the service-role key → runs the user's code **once** on Piston with the whole input as stdin → compares the full stdout vs the full expected output in one C++ comparator pass → persists verdict into `cp_submission_details` (AC/WA/TLE/RE/CE) and mirrors AC → `submissions.status='APPROVED'` (roadmap gating counts APPROVED).
+- Submission page shows the CP file-attach block only when `cp_problems` has a row for the challenge; otherwise the repo-URL form appears.
+- ALL verdicts are written server-side only; `submissions.submission_url` is now nullable (CP rows have none).
+>>>>>>> 1ac194538af3afc30e1bcb502c4d21815a648743

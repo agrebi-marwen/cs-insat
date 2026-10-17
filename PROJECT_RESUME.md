@@ -61,7 +61,7 @@ A gamified monthly coding-challenge platform built and maintained by the **IEEE 
 
 ### 2.7 Admin Panel (`admin/admin.html`)
 - **Two-step authorization**: (1) Supabase database role check (`role = 'admin'`), (2) admin password loaded from the serverless config endpoint (kept secret from the client).
-- **Deploy new challenge**: title, EP reward, instructions, active toggle — automatically tagged to the current month/year. Selecting a `Competitive Programming` category reveals an inline judge-config panel: time limit (100–1000 ms), memory limit (1–10 MB), allowed languages (C++/C/Python/Java checkboxes), and a **single Codeforces-style test file** `{ "input": "...", "expected": "..." }` (input starts with `t`, the number of sub-tests; gzipped client-side into the private `cp-tests` storage bucket).
+- **Deploy new challenge**: title, EP reward, instructions, active toggle — automatically tagged to the current month/year. Selecting a `Competitive Programming` category reveals an inline judge-config panel: time limit (100–5000 ms), memory limit (1–10 MB), allowed languages (C++/C/Python/Java checkboxes), and a **single Codeforces-style test file** `{ "input": "...", "expected": "..." }` (input starts with `t`, the number of sub-tests; gzipped client-side into the private `cp-tests` storage bucket).
 - **Review pending submissions**: approve or reject, with animated card removal and live refresh; pending CP submissions now show language + verdict alongside the approve/reject buttons.
 - **Roadmap operations**: deploy/edit/delete learning paths (title, slug, description, difficulty) and manage their steps (add, edit, delete, reorder via up/down, resources as `Title | URL` lines).
 

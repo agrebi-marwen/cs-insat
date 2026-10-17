@@ -19,7 +19,7 @@ alter table public.submissions
 
 -- ----------------------------------------------------------------------------
 -- 1. CP PROBLEMS - one row per CP challenge.
---    time_limit_ms  <= 1000 (1 second cap)
+--    time_limit_ms  <= 5000 (5 second cap)
 --    memory_limit_mb <= 10 (MB)  -- small problems; Piston containers are lean
 --    test_file_path = storage path inside the "cp-tests" bucket, e.g.
 --                     "<challenge_id>/tests.json.gz" — a gzip JSON archive with a
@@ -32,7 +32,7 @@ alter table public.submissions
 create table if not exists public.cp_problems (
   id uuid primary key default gen_random_uuid(),
   challenge_id uuid not null unique,
-  time_limit_ms integer not null default 1000 check (time_limit_ms between 100 and 1000),
+  time_limit_ms integer not null default 1000 check (time_limit_ms between 100 and 5000),
   memory_limit_mb integer not null default 10 check (memory_limit_mb between 1 and 10),
   test_file_path text not null,
   languages text[] not null default array['c++','c','python','java'],
@@ -59,7 +59,7 @@ alter table public.cp_problems add constraint cp_problems_memory_limit_mb_check
 
 alter table public.cp_problems drop constraint if exists cp_problems_time_limit_ms_check;
 alter table public.cp_problems add constraint cp_problems_time_limit_ms_check
-  check (time_limit_ms between 100 and 1000);
+  check (time_limit_ms between 100 and 5000);
 
 -- ----------------------------------------------------------------------------
 -- 2. CP SUBMISSION DETAILS - source code + judge verdict per submission.

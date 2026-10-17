@@ -1,101 +1,138 @@
-# THE TIME PORTAL — deployable_platform
+# THE TIME PORTAL
 
 A gamified monthly coding-challenge platform built and maintained by the **IEEE CS INSAT Student Branch Chapter**.
-Users solve monthly coding challenges (submit GitHub/GitLab repos or attach a source file for Competitive Programming challenges), earn Energy Points (EP), climb a 7-tier rank ladder, follow learning roadmaps, and watch workshop videos — all inside a 16-bit / 8-bit "temporal" design system (see `DESIGN.md`).
+
+Users solve monthly challenges (by submitting a GitHub/GitLab repo, or a source file for Competitive Programming challenges), earn Energy Points (EP), climb a 7-tier rank ladder, follow learning roadmaps and watch workshop videos, all inside a 16-bit / 8-bit "temporal" design system (see [DESIGN.md](DESIGN.md)).
 
 ---
 
-## 1. Stack
+## Run it locally (step by step)
 
-| Layer | Technology |
+These are the exact steps used to get the project running on Windows. You need access to the `cs-insat` Vercel project (team **BG1BZ**).
+
+### 1. Install the Vercel CLI and log in
+
+```bash
+npm i -g vercel
+```
+```bash
+vercel login
+```
+
+### 2. Clone the repo and go into it
+
+```bash
+git clone https://github.com/agrebi-marwen/cs-insat.git
+```
+```bash
+cd cs-insat
+```
+
+Run every following command **from inside this folder** (the one containing `api/`, `vercel.json`, `index.html`).
+
+### 3. Link the folder to the Vercel project
+
+```bash
+vercel link --project cs-insat
+```
+
+Choose the **BG1BZ** team when asked.
+
+### 4. Pull the environment variables into `.env`
+
+All variables are set for **Production** only, so pull that environment, and pull into **`.env`** (not `.env.local`):
+
+```bash
+vercel env pull .env --environment=production
+```
+
+Check that `.env` now contains real values for `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_PASSWORD` and `PISTON_BASE_URL`.
+
+> **Why `.env`?** For this project (static pages + functions, no framework) `vercel dev` only reads `.env`. With the variables only in `.env.local`, `SUPABASE_URL` is empty and login fails with `Failed to parse URL from /auth/v1/token...`.
+
+> **Why `--environment=production`?** A plain `vercel env pull` downloads the *Development* variables, and there are none, so you'd only get `VERCEL_OIDC_TOKEN`.
+
+> **Heads-up:** this is the real production database and service-role key. What you do locally changes real data. `.env` and `.env.local` are in `.gitignore`; never commit them.
+
+### 5. Check `PISTON_BASE_URL`
+
+The judge runs code on Piston (exposed through a dev tunnel on port 2000). The URL **must end with `/api/v2`**:
+
+```env
+PISTON_BASE_URL="https://<your-tunnel-host>/api/v2"
+```
+
+Without `/api/v2`, CP submissions fail with `Piston execute failed (404): Not Found`. You can test the URL in a browser: `https://<your-tunnel-host>/api/v2/runtimes` should return a JSON list of languages.
+
+### 6. Start the dev server
+
+```bash
+vercel dev
+```
+
+Stop any other `vercel dev` that is already running first, otherwise you may end up on an old server with old variables.
+
+### 7. Open the site
+
+Go to **http://localhost:3000/account/login**, hard-refresh with **Ctrl+Shift+R**, and log in.
+
+If you pull the variables again later, restart `vercel dev` afterwards.
+---
+
+## Troubleshooting
+
+| Error | Cause / fix |
 | :--- | :--- |
-| Frontend | Vanilla HTML5 + CSS3 + ES6 JS, no framework, no build step |
-| CP submission | Users attach a source file (`.c/.cpp/.py/.java`); language detected from the extension |
-| Backend / Database | Supabase (PostgreSQL + Auth + Row Level Security), queried in-browser via `supabase-js` UMD |
-| Judge | Piston API (`https://emkc.org/api/v2/piston/execute` + `/runtimes`), public + optional `PISTON_API_KEY` |
-| Serverless | Vercel Node.js functions in `api/` (ESM) |
-| Local dev | `python -m http.server 3000` (static only; `api/` requires Vercel) |
+| `Failed to parse URL from /auth/v1/token...` | `SUPABASE_URL` is empty at runtime. Variables are in `.env.local` instead of `.env`, or the pull grabbed the wrong environment (use `--environment=production`). Restart `vercel dev`. |
+| `Error: authentication service unavailable.` | The page couldn't reach `/api/authLogin`. Make sure you opened the site through `vercel dev` (not a static server) and hard-refresh. |
+| `Piston execute failed (404): Not Found` | `PISTON_BASE_URL` is missing the `/api/v2` suffix. |
+| `PISTON_BASE_URL is not set` | Add it. The app refuses to fall back to the public Piston API. |
+| Port 3000 busy / login hits an old server | Another `vercel dev` is still running. Stop it, or use `vercel dev --listen 3001`. |
 
 ---
 
-## 2. Repository Layout
+## Repository layout
 
 ```
 /
-├── index.html               Public landing page
-├── account/                 login.html, signup.html
-├── dashboard/               dashboard, challenges, submit, submissions,
-│                            roadmaps, roadmap, learn, workshops
-├── admin/                   admin.html (Command Center console)
+├── index.html               public landing page
+├── account/                 login, signup
+├── dashboard/               dashboard, challenges, submit, submissions, roadmaps, learn, workshops
+├── admin/                   admin console
 ├── api/                     Vercel serverless functions (ESM)
-│   ├── _lib/                shared: supabase.js, http.js, rateLimit.js, piston.js
-│   ├── config.js            serves Supabase creds + admin password from env
-│   ├── authLogin.js / authSignup.js
-│   ├── adminCheck.js        admin role + password verification
-│   ├── rateLimit.js         auth attempt throttling
+│   ├── _lib/                shared helpers (not routes): supabase, http, rateLimit, piston
+│   ├── config.js            serves Supabase URL + anon key to the browser
+│   ├── authLogin.js / authSignup.js / rateLimit.js
+│   ├── adminCheck.js        admin role + password check
+│   ├── cpTestUpload.js      admin uploads CP test archives
 │   └── cpSubmit.js          the CP judge (maxDuration 60s)
-├── assets/
-│   ├── js/                  shared: config, common, security, theme, galaxy-bg,
-│   │                        cursor-lighting, creative, perf-mode, api-cache
-│   ├── js/pages/            one file per page (admin, submit, dashboard, ...)
-│   └── css/                 global.css + per-context css
-├── db/                      *.sql schema + RLS, run in Supabase SQL Editor
-│   ├── tables.sql / challenges.sql / roadmaps.sql / roadmap_nodes.sql
-│   ├── workshops.sql
-│   ├── cp_problems.sql      CP judge tables, bucket, policies (NEW)
-│   └── cp_multiple_submissions.sql  CP retry policy and idempotent scoring
-├── vercel.json              headers/CSP + function maxDuration
-├── DESIGN.md                design system spec
-├── PROJECT_RESUME.md        feature-by-feature documentation
+├── assets/js/               shared scripts; assets/js/pages/ has one file per page
+├── assets/css/
+├── db/                      SQL schema + RLS policies
+├── supabase/migrations/     Supabase CLI migrations
+├── vercel.json              security headers / CSP + function settings
+├── DESIGN.md                design system
+├── PROJECT_RESUME.md        feature documentation
 └── SECURITY_AUDIT.md / RLS.md
 ```
 
 ---
 
-## 3. How to Run
+## Conventions (read before editing)
 
-### Local (frontend only)
-```bash
-python -m http.server 3000
-# open http://localhost:3000
-```
-`assets/js/config.js` detects `localhost:3000` and calls `http://localhost:3000/api/config`.
-Serverless endpoints (`api/*`) need Vercel — local runs without them will fail auth/admin features.
-
-### Deploy
-```bash
-vercel
-```
-
-### Required environment variables (Vercel)
-- `SUPABASE_URL`, `SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY` — **required only for `api/cpSubmit.js`** (judge writes + private test-file reads)
-- `ADMIN_PASSWORD` (used by `api/adminCheck.js`)
-- `PISTON_API_KEY` — optional; appended as the `Authorization` header on Piston calls when set
-- `PISTON_BASE_URL` — optional Piston API base URL; use `http://localhost:2000/api/v2` for local Piston development
-
-Database schema lives in `db/*.sql`; apply new migrations in the Supabase SQL Editor.
+- **No build step.** Pages load `theme.js`, then `config.js` → `common.js` → shared scripts → `pages/<page>.js` (all `defer`). Page scripts start with `initApp(initPageFn)`, and protected pages call `requireSession()`.
+- **API functions are ESM** (`import` / `export default`). Files in `api/_lib/` are never deployed as routes.
+- **CSP (`vercel.json`):** no inline scripts; external JS only from `cdn.jsdelivr.net`; the browser may only connect to itself and `*.supabase.co`, so anything touching Piston must run in `api/`.
+- **API paths** from pages are relative: `fetch('../api/<fn>')`.
+- **XSS:** pass dynamic strings through `escapeHtml()` and untrusted URLs through `safeUrl()`.
+- **New DB feature** = new `db/<name>.sql` with re-runnable (`IF NOT EXISTS`) statements and RLS policies.
+- **Design:** exactly 5 palette colors, hard shadows, no flashing/glitch effects, respect `prefers-reduced-motion`. See `DESIGN.md`.
 
 ---
 
-## 4. Conventions & gotchas (read before editing)
+## Competitive Programming judge
 
-- **No build step.** Pages are plain HTML that load `theme.js` early, then `config.js` → `common.js` → `security.js`/`api-cache.js`/effect scripts → `pages/<page>.js` (all `defer`). Page scripts bootstrap with `initApp(initPageFn)`; every page calls `requireSession()` to enforce the auth wall.
-- **API functions are ESM.** `api/**` uses `import`/`export default`. `node --check` on a `.js` file needs an ESM parse — copy it to `.mjs` in temp first, e.g. `Copy-Item x.js $env:TEMP\opencode\x.mjs` then `node --check`. Files in `api/_lib/` are never deployed as routes (Vercel ignores `_` dirs).
-- **Content Security Policy (`vercel.json`) limits:** `script-src 'self' https://cdn.jsdelivr.net` — **no inline scripts**; any new JS dependency must be an ESM URL on `cdn.jsdelivr.net`. `connect-src 'self' https://*.supabase.co` — browser code may only reach Supabase, so the judge must run on the server (`api/`) to touch Piston.
-- **Paths from `dashboard/*.html` to API:** `../api/<fn>`. Signals: `pages/admin.js`, `pages/login.js` use `fetch('../api/...')`.
-- **XSS:** always `escapeHtml()` dynamic strings; untrusted URLs go through `safeUrl()`.
-- **New DB feature = new `db/<name>.sql`** with `IF NOT EXISTS`-safe statements + RLS policies, matching `cp_problems.sql` / `workshops.sql` style. Re-run is safe.
-- **Design constraints:** exactly 5 palette colors, hard shadows, no flashing/blinking/glitch, respect `prefers-reduced-motion`. See `DESIGN.md`.
-
----
-
-## 5. Competitive Programming judge (cheat sheet)
-
-- The admin CP form includes **Allow multiple submissions**. It defaults to disabled; when enabled, failed attempts can be retried, while a submission that is already being judged or has been accepted remains protected.
-- Apply `db/cp_multiple_submissions.sql` after `db/cp_problems.sql`. Its RPCs create attempts under a database lock and finalize verdicts plus the unique `challenge_awards` row in one transaction, so repeated/concurrent accepted requests cannot award points twice.
-
-- Admin sets time limit (100–1000 ms) and memory limit (1–10 MB), allowed languages, and uploads a **single Codeforces-style test archive** `{ "input": "...", "expected": "..." }` — the input text starts with `t` (number of sub-tests) followed by all `t` data sets, and `expected` is the concatenated output. The browser gzips it and POSTs it to `api/cpTestUpload.js`, which re-verifies the admin session server-side and writes it with the service-role key (bypassing `storage.objects` RLS) to the **private** `cp-tests` bucket at `<challenge_id>/tests.json.gz`; the `cp_problems` row is then written (only visible when the challenge's category slug is `competitive-programming`).
-- `api/cpSubmit.js`: auth via Bearer token → reads config + gunzips tests with the service-role key → runs the user's code **once** on Piston with the whole input as stdin → compares the full stdout vs the full expected output in one C++ comparator pass → persists verdict into `cp_submission_details` (AC/WA/TLE/RE/CE) and mirrors AC → `submissions.status='APPROVED'` (roadmap gating counts APPROVED).
-- Submission page shows the CP file-attach block only when `cp_problems` has a row for the challenge; otherwise the repo-URL form appears.
-- ALL verdicts are written server-side only; `submissions.submission_url` is now nullable (CP rows have none).
+- Admins set the time limit (100–1000 ms), memory limit (1–10 MB) and allowed languages, and upload one Codeforces-style test archive `{ "input": "...", "expected": "..." }`. The browser gzips it and `api/cpTestUpload.js` stores it in the private `cp-tests` bucket at `<challenge_id>/tests.json.gz`.
+- `api/cpSubmit.js` authenticates the user, loads the tests with the service-role key, runs the code **once** on Piston with the whole input as stdin, compares stdout with a C++ comparator, and saves the verdict (AC/WA/TLE/RE/CE) to `cp_submission_details`. AC also marks the submission `APPROVED`.
+- **Allow multiple submissions** (admin option, off by default) lets users retry failed attempts. The RPCs in `cp_multiple_submissions.sql` lock and finalize atomically, so points can't be awarded twice.
+- All verdicts are written server-side only.

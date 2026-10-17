@@ -280,6 +280,7 @@ export default async function handler(req, res) {
       // Output produced — compare the FULL stdout vs the FULL expected output.
       const cmp = await compareOutputs([[resT.output, testFile.expected]]);
       verdict = cmp.accepted ? 'AC' : 'WA';
+      console.log('[judge]', verdict, JSON.stringify({ actual: resT.output, expected: testFile.expected }));
       runOutput = verdict === 'WA' ? resT.output : null;
       const testCount = parseInt(String(testFile.input).trim().split(/\r?\n/, 1)[0], 10);
       testResults = buildTestResults(

@@ -3,9 +3,12 @@
 // The emkc.org/api/v2 endpoints are public; only PISTON_API_KEY (if set) is
 // sent as the Authorization header when the public instance requires it.
 
-const PISTON_BASE_URL = String(
-  process.env.PISTON_BASE_URL || 'https://emkc.org/api/v2/piston'
-).replace(/\/+$/, '');
+if (!process.env.PISTON_BASE_URL) {
+  throw new Error('PISTON_BASE_URL is not set (refusing to fall back to the public Piston API)');
+}
+const PISTON_BASE_URL = String(process.env.PISTON_BASE_URL).replace(/\/+$/, '');
+console.log('[piston] using', PISTON_BASE_URL);
+
 const EXECUTE_URL = `${PISTON_BASE_URL}/execute`;
 const RUNTIMES_URL = `${PISTON_BASE_URL}/runtimes`;
 const API_KEY = process.env.PISTON_API_KEY || '';
@@ -100,93 +103,29 @@ export async function executePiston(opts) {
   return data;
 }
 
-// ----------------------------------------------------------------------------
-// OUTPUT COMPARATOR (C++)
-// Runs on Piston itself (fast, compiled) and handles whitespace:
-//   - strips trailing spaces/tabs on every line
-//   - strips the problem's trailing blank lines
-// Docs a Piston request body with language c++ + this source; stdin carries
-// length-prefixed (actual, expected) byte pairs so content is compared exactly.
-//   stdin := "N\n"
-//           for each test i: "<aLen>\n<actual bytes><eLen>\n<expected bytes>"
-//   stdout: "AC\n" or "WA\n<1-based index>\n"
-// ----------------------------------------------------------------------------
-export const COMPARATOR_SOURCE = `#include <iostream>
-#include <sstream>
-#include <string>
-#include <vector>
-using namespace std;
+// Normalize output using the judge's whitespace rules:
+// trailing spaces/tabs on each line are ignored, as are trailing blank lines.
+function normalizeOutput(value) {
+  const lines = String(value ?? '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .map(line => line.replace(/[ \t]+$/g, ''));
 
-static string normalize(const string& s) {
-    istringstream iss(s);
-    string line;
-    vector<string> out;
-    while (getline(iss, line)) {
-        size_t end = line.find_last_not_of(" \\t\\r");
-        if (end != string::npos) line.erase(end + 1);
-        else line.clear();
-        out.push_back(line);
-    }
-    while (!out.empty() && out.back().empty()) out.pop_back();
-    ostringstream oss;
-    for (size_t i = 0; i < out.size(); ++i) {
-        if (i) oss << '\\n';
-        oss << out[i];
-    }
-    return oss.str();
-}
-
-int main() {
-    int n;
-    if (!(cin >> n)) return 0;
-    for (int t = 0; t < n; ++t) {
-        int alen;
-        if (!(cin >> alen)) break;
-        cin.ignore(1); // newline after the length
-        string actual(alen, '\\0');
-        cin.read(&actual[0], alen);
-
-        int elen;
-        if (!(cin >> elen)) break;
-        cin.ignore(1);
-        string expected(elen, '\\0');
-        cin.read(&expected[0], elen);
-
-        if (normalize(actual) != normalize(expected)) {
-            cout << "WA\\n" << (t + 1) << "\\n";
-            return 0;
-        }
-    }
-    cout << "AC\\n";
-    return 0;
-}
-`;
-
-function buildComparatorInput(pairs) {
-  let s = String(pairs.length) + '\n';
-  for (const [actual, expected] of pairs) {
-    s += String(Buffer.byteLength(actual, 'utf8')) + '\n' + actual;
-    s += String(Buffer.byteLength(expected, 'utf8')) + '\n' + expected;
+  while (lines.length > 0 && lines[lines.length - 1] === '') {
+    lines.pop();
   }
-  return s;
+  return lines.join('\n');
 }
 
-// Compare ([actual, expected], ...) pairs via the C++ comparator on Piston.
+// Compare ([actual, expected], ...) pairs without a second Piston execution.
 // Returns { accepted: boolean, index: number|null } (index is 1-based).
-export async function compareOutputs(pairs) {
-  const data = await executePiston({
-    language: 'c++',
-    code: COMPARATOR_SOURCE,
-    stdin: buildComparatorInput(pairs),
-    runTimeoutMs: 3000,
-    memoryLimitMb: -1
-  });
-
-  const stdout = (data.run && data.run.stdout) || '';
-  const lines = stdout.split('\n').map(l => l.trim());
-  if (lines[0] === 'AC') return { accepted: true, index: null };
-  if (lines[0] === 'WA') {
-    return { accepted: false, index: parseInt(lines[1], 10) || null };
+export function compareOutputs(pairs) {
+  for (let index = 0; index < pairs.length; index += 1) {
+    const [actual, expected] = pairs[index];
+    if (normalizeOutput(actual) !== normalizeOutput(expected)) {
+      return { accepted: false, index: index + 1 };
+    }
   }
-  return { accepted: false, index: null };
+  return { accepted: true, index: null };
 }

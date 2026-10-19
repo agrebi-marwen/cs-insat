@@ -237,7 +237,7 @@ export function buildTestResults(testFile, actual, executionTimeMs, memoryKb, ve
 // "t" line), like CSAcademy / AtCoder. Still ONE Piston request: a driver
 // (see drivers.js) runs the program once per test inside it.
 
-const RUN_BUDGET_MS = 9000;   // stop starting new tests after this (Piston caps a run at 10 s)
+const RUN_BUDGET_MS = 45000;  // stop starting new tests after this (Piston caps a run at 50 s)
 const MEMORY_SLACK_MB = 64;   // room for the driver itself above the per-test limit
 
 // Files + arguments for the driver of each language.
@@ -318,7 +318,7 @@ async function judgeSingle({ language, code, testFile, timeLimitMs, memoryLimitM
       stdin,
       files: request.files,
       args: request.args,
-      runTimeoutMs: 10000,
+      runTimeoutMs: 50000,
       memoryLimitMb: language === 'java' ? perTestMemoryMb + 512 : perTestMemoryMb + MEMORY_SLACK_MB,
       exactLimits: true
     });
@@ -389,6 +389,14 @@ async function judgeSingle({ language, code, testFile, timeLimitMs, memoryLimitM
     if (endReason === 'budget' || run.status === 'TO') {
       verdict = 'TLE';
       runOutput = `Judging stopped after ${results.length} of ${cases.length} tests: the total time for all tests ran out.`;
+    } else if (run.status || run.signal || run.code) {
+      // The sandbox killed the whole run (e.g. a fork bomb hitting the
+      // process limit), taking the driver with it. That is the program's
+      // fault, not the judge's: report RE on the test that was running.
+      const index = results.length + 1;
+      verdict = 'RE';
+      runOutput = `Test ${index}: RE (the program was killed by the sandbox: too many processes or resources)`;
+      if (testResults[index - 1]) testResults[index - 1].result = 'RE';
     } else {
       throw new JudgeInfraError(`Judge driver ended early after ${results.length} of ${cases.length} tests (${run.status || 'no status'}${run.message ? ': ' + run.message : ''})`);
     }

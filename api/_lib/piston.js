@@ -30,7 +30,7 @@ export const LANG_CONFIG = {
 // Must not exceed the Piston server's configured caps
 // (PISTON_COMPILE_TIMEOUT / PISTON_RUN_TIMEOUT on the Piston container).
 const COMPILE_TIMEOUT = 30000;
-const MAX_RUN_TIMEOUT = 10000;
+const MAX_RUN_TIMEOUT = 50000; // = PISTON_RUN_TIMEOUT on the Piston container
 
 let runtimeCache = null;
 

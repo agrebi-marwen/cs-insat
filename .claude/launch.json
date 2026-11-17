@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "time-portal",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--port", "3210"],
+      "port": 3210
+    },
+    {
+      "name": "cs-showcase",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "C:/Users/USER/Desktop/CS/cs showcase", "run", "dev", "--", "--port", "5183", "--strictPort"],
+      "port": 5183
+    }
+  ]
+}

@@ -9,12 +9,13 @@ Users solve monthly coding challenges (submit GitHub/GitLab repos or attach a so
 
 | Layer | Technology |
 | :--- | :--- |
-| Frontend | Vanilla HTML5 + CSS3 + ES6 JS, no framework, no build step |
-| CP submission | Users attach a source file (`.c/.cpp/.py/.java`); language detected from the extension |
-| Backend / Database | Supabase (PostgreSQL + Auth + Row Level Security), queried in-browser via `supabase-js` UMD |
-| Judge | Piston API (`https://emkc.org/api/v2/piston/execute` + `/runtimes`), public + optional `PISTON_API_KEY` |
-| Serverless | Vercel Node.js functions in `api/` (ESM) |
-| Local dev | `python -m http.server 3000` (static only; `api/` requires Vercel) |
+| Framework | Next.js 16 (App Router) + React 19, TypeScript (strict) |
+| Data fetching | TanStack Query in the browser (shared cache, retries, optimistic updates) |
+| Backend / Database | Supabase (PostgreSQL + Auth + Row Level Security) via `@supabase/ssr` (cookie sessions) |
+| API | Next.js route handlers in `src/app/api/`, request bodies validated with zod |
+| Judge | Piston API (`PISTON_BASE_URL`, optional `PISTON_API_KEY`) |
+| Styling | The original design-system CSS, unchanged, in `public/assets/css/` |
+| Tests | Vitest (`src/lib/__tests__/`) |
 
 ---
 
@@ -22,31 +23,24 @@ Users solve monthly coding challenges (submit GitHub/GitLab repos or attach a so
 
 ```
 /
-├── index.html               Public landing page
-├── account/                 login.html, signup.html
-├── dashboard/               dashboard, challenges, submit, submissions,
-│                            roadmaps, roadmap, learn, workshops
-├── admin/                   admin.html (Command Center console)
-├── api/                     Vercel serverless functions (ESM)
-│   ├── _lib/                shared: supabase.js, http.js, rateLimit.js, piston.js
-│   ├── config.js            serves Supabase creds + admin password from env
-│   ├── authLogin.js / authSignup.js
-│   ├── adminCheck.js        admin role + password verification
-│   ├── rateLimit.js         auth attempt throttling
-│   └── cpSubmit.js          the CP judge (maxDuration 60s)
-├── assets/
-│   ├── js/                  shared: config, common, security, theme, galaxy-bg,
-│   │                        cursor-lighting, creative, perf-mode, api-cache
-│   ├── js/pages/            one file per page (admin, submit, dashboard, ...)
-│   └── css/                 global.css + per-context css
-├── db/                      *.sql schema + RLS, run in Supabase SQL Editor
-│   ├── tables.sql / challenges.sql / roadmaps.sql / roadmap_nodes.sql
-│   ├── workshops.sql
-│   ├── cp_problems.sql      CP judge tables, bucket, policies (NEW)
-│   └── cp_multiple_submissions.sql  CP retry policy and idempotent scoring
-├── vercel.json              headers/CSP + function maxDuration
-├── DESIGN.md                design system spec
-├── PROJECT_RESUME.md        feature-by-feature documentation
+├── src/
+│   ├── proxy.ts              per-request CSP nonce + Supabase session refresh
+│   ├── app/
+│   │   ├── page.tsx          public landing page
+│   │   ├── account/          login, signup
+│   │   ├── dashboard/        layout (auth guard + shell) and one folder per page
+│   │   ├── admin/admin/      admin panel (role guard + password gate)
+│   │   └── api/              authLogin, authSignup, adminCheck, rateLimit,
+│   │                         cpSubmit (judge), cpTestUpload
+│   ├── components/           Providers, Effects, dashboard shell, modals
+│   ├── lib/                  judge.ts, utils.ts, queries.ts, supabase/, server/
+│   ├── legacy/               JS carried over as modules: admin-panel.js, galaxy-bg.js
+│   └── types/db.ts           row types
+├── public/assets/            css/ (design system) and images/
+├── db/                       *.sql schema + RLS, run in Supabase SQL Editor
+├── next.config.ts            security headers + redirects from the old .html URLs
+├── DESIGN.md                 design system spec
+├── PROJECT_RESUME.md         feature-by-feature documentation
 └── SECURITY_AUDIT.md / RLS.md
 ```
 
@@ -54,25 +48,30 @@ Users solve monthly coding challenges (submit GitHub/GitLab repos or attach a so
 
 ## 3. How to Run
 
-### Local (frontend only)
 ```bash
-python -m http.server 3000
-# open http://localhost:3000
+npm install
 ```
-`assets/js/config.js` detects `localhost:3000` and calls `http://localhost:3000/api/config`.
-Serverless endpoints (`api/*`) need Vercel — local runs without them will fail auth/admin features.
+
+```bash
+npm run dev
+```
+
+Other scripts: `npm run build`, `npm run typecheck`, `npm test`.
+
+Copy `.env.example` to `.env.local` and fill it in (or `vercel env pull`).
 
 ### Deploy
-```bash
-vercel
-```
 
-### Required environment variables (Vercel)
+Push to the Vercel project; `vercel.json` pins the framework to Next.js.
+
+### Environment variables
+
 - `SUPABASE_URL`, `SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY` — **required only for `api/cpSubmit.js`** (judge writes + private test-file reads)
-- `ADMIN_PASSWORD` (used by `api/adminCheck.js`)
-- `PISTON_API_KEY` — optional; appended as the `Authorization` header on Piston calls when set
-- `PISTON_BASE_URL` — optional Piston API base URL; use `http://localhost:2000/api/v2` for local Piston development
+- `SUPABASE_SERVICE_ROLE_KEY` — server only; used by the judge and the test-file upload
+- `ADMIN_PASSWORD` — second factor for the admin panel (`/api/adminCheck`)
+- `PISTON_BASE_URL` — required for the judge, e.g. `http://localhost:2000/api/v2`
+- `PISTON_API_KEY` — optional `Authorization` header for Piston
+- `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` — optional, persistent auth rate limiting
 
 Database schema lives in `db/*.sql`; apply new migrations in the Supabase SQL Editor.
 
@@ -80,12 +79,13 @@ Database schema lives in `db/*.sql`; apply new migrations in the Supabase SQL Ed
 
 ## 4. Conventions & gotchas (read before editing)
 
-- **No build step.** Pages are plain HTML that load `theme.js` early, then `config.js` → `common.js` → `security.js`/`api-cache.js`/effect scripts → `pages/<page>.js` (all `defer`). Page scripts bootstrap with `initApp(initPageFn)`; every page calls `requireSession()` to enforce the auth wall.
-- **API functions are ESM.** `api/**` uses `import`/`export default`. `node --check` on a `.js` file needs an ESM parse — copy it to `.mjs` in temp first, e.g. `Copy-Item x.js $env:TEMP\opencode\x.mjs` then `node --check`. Files in `api/_lib/` are never deployed as routes (Vercel ignores `_` dirs).
-- **Content Security Policy (`vercel.json`) limits:** `script-src 'self' https://cdn.jsdelivr.net` — **no inline scripts**; any new JS dependency must be an ESM URL on `cdn.jsdelivr.net`. `connect-src 'self' https://*.supabase.co` — browser code may only reach Supabase, so the judge must run on the server (`api/`) to touch Piston.
-- **Paths from `dashboard/*.html` to API:** `../api/<fn>`. Signals: `pages/admin.js`, `pages/login.js` use `fetch('../api/...')`.
-- **XSS:** always `escapeHtml()` dynamic strings; untrusted URLs go through `safeUrl()`.
-- **New DB feature = new `db/<name>.sql`** with `IF NOT EXISTS`-safe statements + RLS policies, matching `cp_problems.sql` / `workshops.sql` style. Re-run is safe.
+- **Routes keep the old URLs** (`/dashboard/dashboard`, `/dashboard/submit?id=…`, `/admin/admin`); the old `.html` URLs redirect.
+- **Auth:** the session lives in cookies. `src/app/dashboard/layout.tsx` and `src/app/admin/admin/page.tsx` guard on the server; API routes authenticate with `authenticate()` from `src/lib/server/auth.ts`. Data access still relies on Supabase RLS.
+- **CSS is linked, not bundled.** `<Styles sheets={[…]}/>` links the section sheets and then `global.css`, preserving the original cascade order. Each section (landing, account, dashboard, admin) has section-wide rules, so links *between* sections are plain `<a>` (full load); use `next/link` only inside the dashboard.
+- **Content Security Policy** is built per request in `src/proxy.ts` (script nonce, `connect-src` limited to this origin and the Supabase project). Browser code cannot reach Piston; the judge runs in `/api/cpSubmit`.
+- **Judge logic is pure and tested** (`src/lib/judge.ts`). Change it together with `src/lib/__tests__/judge.test.ts`.
+- **`src/legacy/admin-panel.js`** is the previous admin script wrapped as a module (plain JS, DOM-driven). New admin work should move sections into typed React components.
+- **New DB feature = new `db/<name>.sql`** with `IF NOT EXISTS`-safe statements + RLS policies. Re-run is safe.
 - **Design constraints:** exactly 5 palette colors, hard shadows, no flashing/blinking/glitch, respect `prefers-reduced-motion`. See `DESIGN.md`.
 
 ---

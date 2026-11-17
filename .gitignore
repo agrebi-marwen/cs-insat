@@ -1,9 +1,13 @@
-.env.local
-.env
 node_modules/
+.next/
+out/
 dist/
 build/
 .DS_Store
 *.log
 .vercel
 .env*
+!.env.example
+next-env.d.ts
+*.tsbuildinfo
+VERCEL ENV
